@@ -12,4 +12,6 @@ public interface OrderRecommendationRepository extends JpaRepository<OrderRecomm
     Optional<OrderRecommendation> findByStoreIdAndItemIdAndTargetDate(Long storeId, Long itemId, LocalDate targetDate);
 
     List<OrderRecommendation> findByStoreIdAndTargetDate(Long storeId, LocalDate targetDate);
+
+    Optional<OrderRecommendation> findFirstByStoreIdOrderByTargetDateDesc(Long storeId);
 }
