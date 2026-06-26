@@ -10,17 +10,21 @@ import org.springframework.web.client.support.RestClientAdapter;
 import org.springframework.web.service.invoker.HttpServiceProxyFactory;
 
 /**
- * KMA 연동이 활성화된 경우에만 RestClient 기반 HTTP 프록시 빈을 등록한다.
- * external.kma.enabled=false(기본값)일 때는 이 설정 클래스 자체가 로드되지 않는다.
+ * HTTP 클라이언트 빈 등록.
+ * - KmaForecastPort: external.kma.enabled=true 일 때만 등록
+ * - aiForecastRestClient: ai.mode=real 일 때만 등록
  */
 @Configuration
-@ConditionalOnProperty(name = "external.kma.enabled", havingValue = "true")
 public class HttpClientConfig {
 
-    @Value("${external.kma.base-url}")
+    @Value("${external.kma.base-url:https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0}")
     private String kmaBaseUrl;
 
+    @Value("${ai.base-url:http://localhost:8000}")
+    private String aiBaseUrl;
+
     @Bean
+    @ConditionalOnProperty(name = "external.kma.enabled", havingValue = "true")
     public KmaForecastPort kmaForecastPort() {
         RestClient client = RestClient.builder()
                 .baseUrl(kmaBaseUrl)
@@ -28,5 +32,13 @@ public class HttpClientConfig {
         RestClientAdapter adapter = RestClientAdapter.create(client);
         HttpServiceProxyFactory factory = HttpServiceProxyFactory.builderFor(adapter).build();
         return factory.createClient(KmaForecastPort.class);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "ai.mode", havingValue = "real")
+    public RestClient aiForecastRestClient() {
+        return RestClient.builder()
+                .baseUrl(aiBaseUrl)
+                .build();
     }
 }
