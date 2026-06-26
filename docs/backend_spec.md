@@ -416,14 +416,13 @@ double wasteAvoidedKg = Math.max(0, baseline - qStar) * item.kgPerUnit();
 CSV 헤더: 날짜,요일,날씨,기온,강수mm,행사,신메뉴,품목,구분,판매수량,비고_시나리오
 data: { "accepted": 360, "rejected": 2, "errors":[{"line":15,"code":"ITEM_NOT_FOUND","value":"없는품목"}] }
 ```
-**`POST /api/v1/ingest/sales/daily`** — multipart `file`(CSV), `storeId`, body `eventFlag`,`newMenuFlag`,`scenarioNote` (하루치)
+**`POST /api/v1/ingest/sales/daily`** — multipart `file`(CSV), `storeId` (하루치)
 ```
-CSV 헤더: 날짜,요일,품목,구분,판매수량        (날씨 컬럼 없음)
+CSV 헤더: 날짜,요일,품목,구분,판매수량,행사,신메뉴,비고_시나리오     (날씨 컬럼 없음)
+품목별 메타(행 단위): 행사/신메뉴(여부 예 "Y"/공백)→SalesRecord.event/newMenu, 비고_시나리오→scenarioNote
 날씨 자동 보강: 업로드 시 기상청 API로 해당 날짜 날씨 조회 → SalesRecord.weather/avgTemp/precipitationMm 채우고
                WeatherForecast 저장. 매핑: precipitationMm>0→비, else skyCode≥3→흐림, else 맑음. 조회 실패 시 null.
-body 메타(그날 전체 적용): eventFlag(bool), newMenuFlag(bool), scenarioNote(str, 예 "주말+맑음->수요 높음")
-저장: eventFlag/newMenuFlag → SalesRecord.event/newMenu 마커("Y"/null), scenarioNote → SalesRecord.scenarioNote
-data: { "appliedDate":"2026-06-28","accepted":2,"rejected":0,"eventFlag":false,"newMenuFlag":true,"errors":[] }
+data: { "appliedDate":"2026-06-28","accepted":2,"rejected":0,"errors":[] }
 ```
 **`POST /api/v1/ingest/inventory`** — multipart `file`, `storeId`
 ```

@@ -570,11 +570,11 @@ class GlobalExceptionHandlerTest {
 - Consumes: `ItemMasterRepository.findByName`, `WeatherProvider`.
 - Produces:
   - `record IngestResult(int accepted, int rejected, List<RowError> errors)`, `record RowError(int line, String code, String value)`.
-  - `record DailyIngestResult(LocalDate appliedDate, int accepted, int rejected, boolean eventFlag, boolean newMenuFlag, List<RowError> errors)`.
+  - `record DailyIngestResult(LocalDate appliedDate, int accepted, int rejected, List<RowError> errors)`.
   - `record DailyWeather(String weather, BigDecimal avgTemp, BigDecimal precipitationMm)`.
   - `interface WeatherProvider { Optional<DailyWeather> lookup(Long storeId, LocalDate date); }` — 기상청 날씨 조회 시임. M1엔 `NoOpWeatherProvider`(항상 `Optional.empty()`, `@ConditionalOnMissingBean` 기본 빈). M3에서 `KmaWeatherProvider`가 실연동(Task 3.2).
   - `SalesCsvService.ingest(Long storeId, InputStream csv): IngestResult` — 풀컬럼 CSV(헤더 `날짜,요일,날씨,기온,강수mm,행사,신메뉴,품목,구분,판매수량,비고_시나리오`).
-  - `SalesCsvService.ingestDaily(Long storeId, InputStream csv, boolean eventFlag, boolean newMenuFlag, String scenarioNote): DailyIngestResult` — 하루치 CSV(헤더 `날짜,요일,품목,구분,판매수량`), body 메타를 모든 행에 적용. event/newMenu는 `"Y"`/null 마커로 저장. **날씨는 `WeatherProvider.lookup(storeId,날짜)`로 보강**(M1 NoOp이면 null, M3 KMA면 채움).
+  - `SalesCsvService.ingestDaily(Long storeId, InputStream csv): DailyIngestResult` — 하루치 CSV(헤더 `날짜,요일,품목,구분,판매수량,행사,신메뉴,비고_시나리오`). **행사/신메뉴/비고_시나리오는 행(품목)별** 컬럼에서 읽어 `SalesRecord.event/newMenu/scenarioNote`에 저장(전체 일괄 아님). **날씨는 `WeatherProvider.lookup(storeId,날짜)`로 보강**(M1 NoOp이면 null, M3 KMA면 채움).
   - 컨트롤러는 `ApiResponse<IngestResult>` / `ApiResponse<DailyIngestResult>` 반환.
 
 - [ ] **Step 1: SalesRecord 엔티티 + repo + WeatherProvider 시임 작성** (SalesRecord: V1 컬럼 매핑, `getQuantitySold():BigDecimal`, `getBusinessDate():LocalDate`, `getItemId():Long`; repo: `List<SalesRecord> findByStoreIdAndBusinessDateBetween(Long, LocalDate, LocalDate)`).
@@ -623,13 +623,14 @@ class SalesCsvServiceTest {
     org.assertj.core.api.Assertions.assertThat(r.rejected()).isEqualTo(1);
     org.assertj.core.api.Assertions.assertThat(r.errors().get(0).code()).isEqualTo("ITEM_NOT_FOUND");
   }
-  @org.junit.jupiter.api.Test void dailyUploadAppliesBodyMeta() {
-    String csv = "날짜,요일,품목,구분,판매수량\n2026-06-28,일,우유,원재료,11\n";
-    var r = svc.ingestDaily(1L, new java.io.ByteArrayInputStream(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8)),
-              false, true, "주말+맑음->수요 높음");
-    org.assertj.core.api.Assertions.assertThat(r.accepted()).isEqualTo(1);
+  @org.junit.jupiter.api.Test void dailyUploadAppliesPerItemMeta() {
+    String csv = "날짜,요일,품목,구분,판매수량,행사,신메뉴,비고_시나리오\n" +
+                 "2026-06-28,일,우유,원재료,11,,,주말+맑음->수요 높음\n" +
+                 "2026-06-28,일,베이커리,완제품,23,Y,Y,신메뉴 출시+행사\n";
+    var r = svc.ingestDaily(1L, new java.io.ByteArrayInputStream(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    org.assertj.core.api.Assertions.assertThat(r.accepted()).isEqualTo(2);
     org.assertj.core.api.Assertions.assertThat(r.appliedDate()).isEqualTo(java.time.LocalDate.parse("2026-06-28"));
-    org.assertj.core.api.Assertions.assertThat(r.newMenuFlag()).isTrue();
+    // 품목별로 다르게 저장됨: 우유는 event=null, 베이커리는 event="Y"
   }
 }
 ```
@@ -692,11 +693,9 @@ public class SalesCsvService {
     return new IngestResult(accepted, errors.size(), errors);
   }
   @Transactional
-  public DailyIngestResult ingestDaily(Long storeId, InputStream csv, boolean eventFlag,
-                                       boolean newMenuFlag, String scenarioNote) {
+  public DailyIngestResult ingestDaily(Long storeId, InputStream csv) {
     var rows = CsvParser.parse(csv); int accepted=0; var errors=new ArrayList<IngestResult.RowError>();
     LocalDate applied=null; int line=1;
-    String eventMark = eventFlag? "Y" : null, newMenuMark = newMenuFlag? "Y" : null;
     var weatherCache = new java.util.HashMap<LocalDate, com.netzero.weather.dto.DailyWeather>();
     for (var r : rows) { line++;
       var item = items.findByName(r.get("품목")).orElse(null);
@@ -706,12 +705,13 @@ public class SalesCsvService {
       var w = weatherCache.computeIfAbsent(d, dd -> weather.lookup(storeId, dd).orElse(null));
       String wx = w!=null? w.weather() : null;
       BigDecimal temp = w!=null? w.avgTemp() : null, precip = w!=null? w.precipitationMm() : null;
+      // 행사/신메뉴/비고_시나리오는 행(품목)별 컬럼에서 읽음
       var rec = new SalesRecord(storeId, d, r.get("요일"), wx, temp, precip,
-        eventMark, newMenuMark, item.getCategory().name(), item.getId(),
-        bd(r.get("판매수량")), nz(scenarioNote));
+        nz(r.get("행사")), nz(r.get("신메뉴")), item.getCategory().name(), item.getId(),
+        bd(r.get("판매수량")), nz(r.get("비고_시나리오")));
       sales.save(rec); accepted++;
     }
-    return new DailyIngestResult(applied, accepted, errors.size(), eventFlag, newMenuFlag, errors);
+    return new DailyIngestResult(applied, accepted, errors.size(), errors);
   }
   private static BigDecimal bd(String s){ return s==null||s.isBlank()? null : new BigDecimal(s); }
   private static String nz(String s){ return s==null||s.isBlank()? null : s; }
@@ -743,10 +743,8 @@ public class IngestController {
 
   @PostMapping(value="/sales/daily", consumes="multipart/form-data")
   public ApiResponse<DailyIngestResult> salesDaily(@RequestParam Long storeId,
-      @RequestParam MultipartFile file,
-      @RequestParam boolean eventFlag, @RequestParam boolean newMenuFlag,
-      @RequestParam(required=false) String scenarioNote) throws IOException {
-    return ApiResponse.ok(sales.ingestDaily(storeId, file.getInputStream(), eventFlag, newMenuFlag, scenarioNote));
+      @RequestParam MultipartFile file) throws IOException {
+    return ApiResponse.ok(sales.ingestDaily(storeId, file.getInputStream()));
   }
 }
 ```
@@ -1078,9 +1076,8 @@ class KmaWeatherProviderTest {
       .thenReturn(new com.netzero.weather.dto.WeatherSnapshot(
         java.time.LocalDate.parse("2026-06-28"), new java.math.BigDecimal("21.0"),
         java.math.BigDecimal.ZERO, 10, 4));
-    String csv = "날짜,요일,품목,구분,판매수량\n2026-06-28,일,우유,원재료,11\n";
-    sales.ingestDaily(1L, new java.io.ByteArrayInputStream(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8)),
-        false, false, null);
+    String csv = "날짜,요일,품목,구분,판매수량,행사,신메뉴,비고_시나리오\n2026-06-28,일,우유,원재료,11,,,\n";
+    sales.ingestDaily(1L, new java.io.ByteArrayInputStream(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
     var rec = repo.findByStoreIdAndBusinessDateBetween(1L,
         java.time.LocalDate.parse("2026-06-28"), java.time.LocalDate.parse("2026-06-28")).get(0);
     org.assertj.core.api.Assertions.assertThat(rec.getWeather()).isEqualTo("흐림");
