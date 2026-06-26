@@ -29,7 +29,7 @@ storage:
     endpoint: ${S3_ENDPOINT:}
     presign-expiry-seconds: 600
 security:
-  api-key: ${SECURITY_API_KEY:dev-demo-key}
+  api-key: ${SECURITY_API_KEY:}
 optimization: { default-cu: 1.0, default-co: 1.0 }
 carbon: { car-kgco2-per-km: 4.6 }
 management.endpoints.web.exposure.include: health,info,metrics,prometheus

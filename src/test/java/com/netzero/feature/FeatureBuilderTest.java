@@ -117,7 +117,7 @@ class FeatureBuilderTest {
         // Prior 7 days (2026-07-01 to 2026-07-07): 100 units each = avg 100
         // Trend = (50 - 100) / 100 = -0.5 (50% decrease)
 
-        var cheese = itemMasterRepository.findByName("치즈").orElseThrow();
+        var cheese = itemMasterRepository.findByName("휘핑크림").orElseThrow();
         var store = storeRepository.findAll().stream().findFirst().orElseThrow();
         Long storeId = store.getId();
         Long itemId = cheese.getId();
@@ -158,7 +158,7 @@ class FeatureBuilderTest {
         // Test with no sales data -> both ma7 and ma7Prior will be 0
         // Trend = (0 - 0) / max(0, 1.0) = 0 / 1.0 = 0.0
 
-        var coffee = itemMasterRepository.findByName("원두").orElseThrow();
+        var coffee = itemMasterRepository.findByName("에스프레소 원두").orElseThrow();
         var store = storeRepository.findAll().stream().findFirst().orElseThrow();
         Long storeId = store.getId();
         Long itemId = coffee.getId();

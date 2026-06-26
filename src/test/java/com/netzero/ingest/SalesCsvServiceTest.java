@@ -28,10 +28,10 @@ class SalesCsvServiceTest {
     void dailyUploadAppliesPerItemMeta() {
         String csv = "날짜,요일,품목,구분,판매수량,행사,신메뉴,비고_시나리오\n" +
                      "2026-06-28,일,우유,원재료,11,,,주말+맑음->수요 높음\n" +
-                     "2026-06-28,일,베이커리,완제품,23,Y,Y,신메뉴 출시+행사\n";
+                     "2026-06-28,일,크루아상,완제품,23,Y,Y,신메뉴 출시+행사\n";
         var r = svc.ingestDaily(1L, new java.io.ByteArrayInputStream(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         org.assertj.core.api.Assertions.assertThat(r.accepted()).isEqualTo(2);
         org.assertj.core.api.Assertions.assertThat(r.appliedDate()).isEqualTo(java.time.LocalDate.parse("2026-06-28"));
-        // 품목별로 다르게 저장됨: 우유는 event=null, 베이커리는 event="Y"
+        // 품목별로 다르게 저장됨: 우유는 event=null, 크루아상은 event="Y"
     }
 }

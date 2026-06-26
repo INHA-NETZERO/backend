@@ -5,7 +5,7 @@ SELECT
   im.name,
   im.category,
   '정기발주',
-  CASE WHEN im.name = '원두' THEN 14 ELSE 7 END,
+  CASE WHEN im.name = '에스프레소 원두' THEN 14 ELSE 7 END,
   1,
   1.00,
   CASE WHEN im.unit = 'ea' THEN 1.000 ELSE 2.000 END,
