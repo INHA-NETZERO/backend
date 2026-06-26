@@ -17,6 +17,7 @@ public class WebConfig implements WebMvcConfigurer {
             .allowedOrigins(
                 "http://localhost:3000",
                 "http://localhost:5173",
+                "http://165.246.116.18:5173",
                 "https://main.d1ghyit9lnzqp4.amplifyapp.com",
                 frontendUrl
             )
