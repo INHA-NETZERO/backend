@@ -410,95 +410,111 @@ double wasteAvoidedKg = Math.max(0, baseline - qStar) * item.kgPerUnit();
 
 > 요청/응답 필드 JSON 예시와 **응답 envelope(`{success,data}`)** 의 권위 기준은 [`backend_api_spec.md`](./backend_api_spec.md). 본 절은 요약.
 
+> 아래 모든 JSON 응답은 §5.7 envelope(`{success,data}`)으로 감싼다. 예시는 성공 envelope 기준이며, `data` payload만 보려면 `data` 안쪽을 참조.
+
 ### 5.1 데이터 수집
 **`POST /api/v1/ingest/sales`** — multipart `file`(CSV), `storeId` (대량·풀컬럼)
+```json
+// CSV 헤더: 날짜,요일,날씨,기온,강수mm,행사,신메뉴,품목,구분,판매수량,비고_시나리오
+{ "success": true,
+  "data": { "accepted": 360, "rejected": 2,
+    "errors": [ { "line": 15, "code": "ITEM_NOT_FOUND", "value": "없는품목" } ] } }
 ```
-CSV 헤더: 날짜,요일,날씨,기온,강수mm,행사,신메뉴,품목,구분,판매수량,비고_시나리오
-data: { "accepted": 360, "rejected": 2, "errors":[{"line":15,"code":"ITEM_NOT_FOUND","value":"없는품목"}] }
-```
+> **구현:** `IngestController` → `SalesCsvService.ingest`. `CsvParser`(BOM 제거, `,` split)로 행 파싱 → 품목명을 `ItemMasterRepository.findByName`로 매칭(미존재 행은 `ITEM_NOT_FOUND`로 거부 리포트, 부분 성공). `@Transactional` 일괄 저장, `(store,item,date)` UNIQUE로 멱등(재적재 시 갱신). 반환 `ApiResponse<IngestResult>`.
+
 **`POST /api/v1/ingest/sales/daily`** — multipart `file`(CSV), `storeId` (하루치)
+```json
+// CSV 헤더: 날짜,요일,품목,구분,판매수량,행사,신메뉴,비고_시나리오  (날씨 컬럼 없음)
+{ "success": true,
+  "data": { "appliedDate": "2026-06-28", "accepted": 2, "rejected": 0, "errors": [] } }
 ```
-CSV 헤더: 날짜,요일,품목,구분,판매수량,행사,신메뉴,비고_시나리오     (날씨 컬럼 없음)
-품목별 메타(행 단위): 행사/신메뉴(여부 예 "Y"/공백)→SalesRecord.event/newMenu, 비고_시나리오→scenarioNote
-날씨 자동 보강: 업로드 시 기상청 API로 해당 날짜 날씨 조회 → SalesRecord.weather/avgTemp/precipitationMm 채우고
-               WeatherForecast 저장. 매핑: precipitationMm>0→비, else skyCode≥3→흐림, else 맑음. 조회 실패 시 null.
-data: { "appliedDate":"2026-06-28","accepted":2,"rejected":0,"errors":[] }
-```
+> **구현:** `SalesCsvService.ingestDaily`. 행사/신메뉴/비고_시나리오는 **행(품목)별** 컬럼에서 읽어 `event/newMenu/scenarioNote`에 저장. 날씨는 `WeatherProvider.lookup(storeId,날짜)`(M3 `KmaWeatherProvider`)로 보강 — 날짜당 1회 호출(캐시), 매핑 `precipitationMm>0→비 / skyCode≥3→흐림 / else 맑음`, KMA 실패 시 null(업로드 성공). `WeatherForecast`도 저장.
+
 **`POST /api/v1/ingest/inventory`** — multipart `file`, `storeId`
+```json
+// CSV 헤더: 날짜,품목,구분,단위,발주,기초재고,수요,실판매,결품,폐기,기말재고
+{ "success": true, "data": { "accepted": 240, "rejected": 0, "errors": [] } }
 ```
-CSV 헤더: 날짜,품목,구분,단위,발주,기초재고,수요,실판매,결품,폐기,기말재고
+> **구현:** `InventoryCsvService.ingest`. 적재 시 ItemMaster로 산출 컬럼 계산: `waste_kg=폐기×kgPerUnit`, `waste_carbon_kg=waste_kg×(efProd+efWaste)`(wasteTarget=false면 0), `waste_cost_krw=폐기×purchasePrice`, `last_order_date=ordered_qty>0?날짜:직전값`. `(store,item,date)` UNIQUE upsert.
+
+**`POST /api/v1/weather/refresh`** — `{ "storeId":1, "date":"2026-06-27" }`
+```json
+{ "success": true,
+  "data": { "region":"서울_강남","forecastDate":"2026-06-27","avgTemp":21.2,
+            "precipitationMm":12.0,"precipitationProb":80,"skyCode":4 } }
 ```
-**`POST /api/v1/weather/refresh`** — `{ "storeId":1, "date":"2026-06-27" }` → 기상청 즉시 수집 → `WeatherForecast`
-> 품목은 `품목ID` 또는 `품목명`으로 매칭(ItemMaster). 미존재 시 행 거부(`ITEM_NOT_FOUND`).
+> **구현:** `WeatherController` → `WeatherService.fetchAndStore`. `KmaForecastPort`(@HttpExchange, `RestClient`)로 기상청 단기예보 호출 → TMX/TMN/POP/PCP/SKY 파싱 → `avgTemp=(tempMax+tempMin)/2` → `WeatherForecast` 저장. resilience4j(timeout·retry·circuitbreaker), 실패 시 `WEATHER_FETCH_FAILED`(502).
 
 ### 5.2 분석 파이프라인
-**`POST /api/v1/pipeline/run`**
+**`POST /api/v1/pipeline/run`** — `{ "storeId":1, "targetDate":"2026-06-27" }`
 ```json
-Req: { "storeId": 1, "targetDate": "2026-06-27" }
-Res 202: { "storeId":1, "targetDate":"2026-06-27",
-  "forecasted":8, "recommended":8, "carbonComputed":8,
-  "modelVersion":"lgbm_global_v1", "elapsedMs":214 }
+{ "success": true,
+  "data": { "storeId":1, "targetDate":"2026-06-27",
+    "dueItems":5, "forecasted":5, "recommended":5, "carbonComputed":5,
+    "modelVersion":"lgbm_global_v1", "elapsedMs":214 } }
 ```
-**`GET /api/v1/forecast?storeId=1&date=2026-06-27`**
-**OrderPolicy·InventorySnapshot를 참조해 해당일 발주가 도래(due)한 품목만** 골라 커버기간(리드타임+발주주기)만큼 예측·반환.
-- **발주 도래 판정(품목별):** `date − InventorySnapshot.lastOrderDate ≥ OrderPolicy.orderCycleDays` (lastOrderDate 없으면 최초 발주로 간주해 도래). OrderPolicy 미존재 품목은 제외.
-- 도래 품목 각각에 대해 `coverage = leadTimeDays + orderCycleDays` 일별 예측을 AI에 요청하고, 합산 분위(`p10ₕ/p50ₕ/p90ₕ`)와 일별 배열을 함께 반환.
+> **구현:** `PipelineController` → `DailyPipelineService.run`. 순서: ①`DueItemSelector.selectDue` ②`WeatherService.coverageWeather`(커버기간 날씨) ③`FeatureBuilder` ④`ForecastPort.orderRecommendation`(AI 호출, `salesHistory` presigned URL 첨부) ⑤`OrderOptimizationService`(newsvendor) ⑥`CarbonAccountingService`. 외부호출(②④)은 트랜잭션 밖 + resilience4j, 결과는 `(store,item,target_date)` upsert로 멱등. 동시 실행 가드(in-memory lock by store+date) → `PIPELINE_ALREADY_RUNNING`(409). `@Scheduled(cron)`로도 트리거.
+
+**`GET /api/v1/forecast?storeId=1&date=2026-06-27`** — 발주 도래 품목만 예측
 ```json
-{ "storeId":1, "targetDate":"2026-06-27",
-  "dueItems":[{
-    "itemId":101,"itemName":"우유",
-    "coverage":{"leadTimeDays":1,"orderCycleDays":7,"coverageDays":8},
-    "lastOrderDate":"2026-06-19","daysSinceLastOrder":8,
-    "horizonForecast":{"p10":60,"p50":80,"p90":108},
-    "daily":[{"date":"2026-06-28","p10":6,"p50":8,"p90":11}, "..."],
-    "modelVersion":"lgbm_global_v1"
-  }],
-  "skipped":[{ "itemId":205,"itemName":"원두","reason":"NOT_DUE","daysSinceLastOrder":3,"orderCycleDays":14 }] }
+{ "success": true,
+  "data": { "storeId":1, "targetDate":"2026-06-27",
+    "dueItems":[{ "itemId":101,"itemName":"우유",
+      "coverage":{"leadTimeDays":1,"orderCycleDays":7,"coverageDays":8},
+      "lastOrderDate":"2026-06-19","daysSinceLastOrder":8,
+      "horizonForecast":{"p10":60,"p50":80,"p90":108},
+      "daily":[{"date":"2026-06-28","p10":6,"p50":8,"p90":11}, "..."],
+      "modelVersion":"lgbm_global_v1" }],
+    "skipped":[{ "itemId":205,"itemName":"원두","reason":"NOT_DUE","daysSinceLastOrder":3,"orderCycleDays":14 }] } }
 ```
-> `POST /pipeline/run`도 동일한 **발주 도래 품목 선별** 로직을 사용한다(도래 품목만 예측→발주→탄소 산정).
+> **구현:** `ForecastController` → `DueItemSelector`(OrderPolicy + `InventorySnapshotRepository.findTopBy...OrderByBusinessDateDesc`로 lastOrderDate 조회; `date−lastOrderDate ≥ orderCycleDays`면 도래, lastOrderDate null이면 도래, OrderPolicy 없으면 skip) → `DemandForecastService`(도래 품목만 `ForecastPort` 호출, 일별 분위 합산). `pipeline/run`과 동일한 선별 로직 공유.
+
 **`GET /api/v1/recommendations?storeId=1&date=2026-06-27`**
 ```json
-{ "items":[{
-  "itemId":101,"itemName":"우유","unit":"L",
-  "recommendedQuantity":9.0,"optimalStockQuantity":11.0,"onHand":2.0,
-  "baselineQuantity":12.0,"criticalRatio":0.42,
-  "expectedWasteAvoidedKg":3.09,
-  "rationale":{"reason":"rain_forecast","precipitationProb":80,"cu":1200,"co":1650}
-}]}
+{ "success": true,
+  "data": { "items":[{
+    "itemId":101,"itemName":"우유","unit":"L",
+    "coverage":{"leadTimeDays":1,"orderCycleDays":7,"coverageDays":8},
+    "horizonForecast":{"p10":60,"p50":80,"p90":108},
+    "recommendedQuantity":66,"optimalStockQuantity":76.1,"onHand":12,
+    "baselineQuantity":88,"criticalRatio":0.421,"expectedWasteAvoidedKg":12.31,
+    "rationale":{"cu":800,"co":1100,"lotUnit":2,"interpolation":"P10h~P50h @0.803"} }] } }
 ```
+> **구현:** `RecommendationController` → `OrderRecommendationRepository.findByStoreIdAndTargetDate`(파이프라인이 미리 저장한 추천 조회). 단순 read, 품목명/단위는 ItemMaster 조인.
+
 **`GET /api/v1/recommendations/{id}`** — 단건 + 전체 rationale.
+> **구현:** `findById` → 없으면 `CONTENT_NOT_FOUND`(404).
 
 ### 5.3 탄소 리포트
 **`GET /api/v1/carbon/today?storeId=1`**
 ```json
-{ "storeId":1,"targetDate":"2026-06-27",
-  "guaranteedSavingKg":2.1,"potentialSavingKg":9.4,
-  "byItem":[{"itemId":101,"itemName":"우유","wasteAvoidedKg":3.09,"guaranteedSavingKg":0.6,"potentialSavingKg":9.3}],
-  "carEquivalentKm":2.0 }
+{ "success": true,
+  "data": { "storeId":1,"targetDate":"2026-06-27",
+    "guaranteedSavingKg":2.46,"potentialSavingKg":39.4,"wasteCostAvoidedKrw":11950,"carEquivalentKm":8.6,
+    "byItem":[{"itemId":101,"itemName":"우유","wasteAvoidedKg":12.31,"guaranteedSavingKg":2.46,"potentialSavingKg":39.4}] } }
 ```
-**`GET /api/v1/carbon/savings?storeId=1&from=2026-06-01&to=2026-06-26`** — 기간 일별 시계열.
-**`GET /api/v1/carbon/savings/summary?storeId=1`** — 누적 총합·환산지표(대시보드 카드).
+> **구현:** `CarbonController` → `CarbonSavingRepository.findByStoreIdAndTargetDate` 합산. `carEquivalentKm = potentialSavingKg / carbon.car-kgco2-per-km`(config).
+
+**`GET /api/v1/carbon/savings?storeId=1&from=&to=`** — 기간 일별 시계열.
+> **구현:** `findByStoreIdAndTargetDateBetween` → 날짜별 group 합산(`series[]`).
+
+**`GET /api/v1/carbon/savings/summary?storeId=1`** — 누적 총합·환산.
+> **구현:** 전 기간 sum(보장/잠재) + carEquivalentKm + periodDays.
 
 ### 5.4 대시보드 집계
-**`GET /api/v1/dashboard/summary?storeId=1`** — 발주 가이드 + 오늘 절감 + 예측정확도(WAPE) 한 번에.
+**`GET /api/v1/dashboard/summary?storeId=1`** — 발주 가이드 + 오늘 절감 + 예측정확도(WAPE).
+> **구현:** `DashboardService`가 `OrderRecommendationRepository`·`CarbonSavingRepository`·`WapeService`를 조합해 단일 응답으로 반환(프론트 1회 호출).
 
 ### 5.5 sLLM 연동(언어 계층 프록시)
-**`POST /api/v1/chat`**
+**`POST /api/v1/chat`** — `{ "storeId":1, "date":"2026-06-27", "question":"내일 우유 얼마나 시켜요?" }`
 ```json
-Req: { "storeId":1, "date":"2026-06-27", "question":"내일 우유 얼마나 시켜요?" }
-Res: {
-  "answer":"내일은 비 예보(강수확률 80%)라 우유 수요가 낮아 12L→9L 발주를 권장합니다. 과발주 3L를 줄여 약 9kgCO₂eq를 절감합니다.",
-  "groundedOn":{ "forecastId":123,"recommendationId":456,"carbonSavingId":789 },
-  "cacheHit": true, "llmLatencyMs": 180, "tokens": 142 }
+{ "success": true,
+  "data": {
+    "answer":"다음 발주주기(7일)에 우유는 66L 발주를 권장합니다. ... 약 39kgCO₂eq를 절감합니다.",
+    "groundedOn":{ "forecastId":123,"recommendationId":456,"carbonSavingId":789 },
+    "cacheHit": true, "llmLatencyMs": 180, "tokens": 142 } }
 ```
-**`GET /api/v1/chat/context?storeId=1&date=2026-06-27`** — (내부/③용) 산정 근거 컨텍스트 번들.
-**백엔드 → sLLM 계약:**
-```
-POST {ai.base-url}/v1/generate
-Req: { "question":"...", "grounding": { forecast, recommendation, carbon }, "locale":"ko" }
-Res: { "answer":"...", "cacheHit":bool, "latencyMs":int, "tokens":int }
-```
-> `/chat`은 sLLM에 **근거 수치를 주입만** 하고 수치 생성을 맡기지 않는다(환각 차단). 시맨틱 캐싱·토큰 계측은 ③에서, 백엔드는 메트릭만 중계.
+> **구현:** `ChatController` → `ChatService`. `RagContextAssembler`가 DB(DemandForecast·OrderRecommendation·CarbonSaving)에서 근거 번들 조립 → `LlmPort.generate`(AI `RestClient`, `POST {ai.base-url}/v1/generate`) 호출 → 응답 중계. `ForecastMetrics.recordLlmCall(tokens,latency,cacheHit)`로 계측. sLLM엔 **근거 수치 주입만**(생성 금지·환각 차단). 실패 시 `LLM_UNAVAILABLE`(503).
 
 ### 5.6 운영
 - `GET /actuator/health`, `GET /actuator/metrics`, `GET /actuator/prometheus`(선택).
@@ -516,22 +532,27 @@ Res: { "answer":"...", "cacheHit":bool, "latencyMs":int, "tokens":int }
 - 구현: `ApiResponse<T>` 래퍼 + `@RestControllerAdvice`. HTTP 상태코드는 code에 매핑. CSV 다운로드·actuator는 envelope 미적용.
 
 ### 5.8 데이터 추출 (CSV/엑셀 내보내기)
-월 단위(1개월) 추출. `Content-Type: text/csv; charset=UTF-8`(BOM 포함, 엑셀 한글 호환), 파일명은 `Content-Disposition`. `format=csv|xlsx`(기본 csv, xlsx는 Apache POI 옵션). 구현은 `export` 도메인의 `ExportService` + 스트리밍 응답.
+월 단위(1개월) 추출. **CSV 다운로드는 envelope 미적용**(`Content-Type: text/csv; charset=UTF-8` + BOM, `Content-Disposition` 파일명). `format=csv|xlsx`(기본 csv, xlsx는 Apache POI). 오류는 JSON envelope(잘못된 month → `VALIDATION_ERROR`, 데이터 없음 → `CONTENT_NOT_FOUND`).
 
 **① 판매내역 — `GET /api/v1/export/sales.csv?storeId=1&month=2026-06`**
-SalesRecord를 그대로 투영(매장 단위, 월 범위).
 ```
 컬럼: 날짜, 요일, 날씨, 기온, 강수mm, 행사, 신메뉴, 품목, 구분, 판매수량, 비고_시나리오
-원천: SalesRecord (+ 품목명/구분은 ItemMaster 조인)
 ```
+> **구현:** `ExportController` → `SalesCsvExporter.export(storeId, YearMonth)`. `SalesRecordRepository.findByStoreIdAndBusinessDateBetween`(월 범위) → `CsvWriter`로 라인 생성(품목명/구분 ItemMaster 조인), 스트리밍 응답. 단순 투영.
 
 **② 재고 흐름 — `GET /api/v1/export/store-inventory.csv?storeId=1&month=2026-06`**
-**InventorySnapshot(일별 재고원장)의 직접 투영** — 모든 컬럼이 테이블에 적재되어 있어 추출 시 추가 계산 불필요.
 ```
 컬럼: 날짜, 요일, 품목, 구분, 단위, 발주, 기초재고, 수요, 실판매, 결품, 폐기, 기말재고, 폐기_kg, 탄소_kgCO2e, 폐기_비용_원
-원천: InventorySnapshot 전 컬럼 (품목명은 ItemMaster 조인)
 ```
-> 산출 컬럼(결품·폐기·폐기_kg·탄소·비용)은 InventorySnapshot 적재 시 계산됨(§3.2 InventorySnapshot 규칙 참조).
+> **구현:** `InventoryFlowExporter.export`. **InventorySnapshot 직접 투영**(산출 컬럼은 적재 시 이미 계산됨, §3.2) → 추출 시 추가 계산 없음.
+
+**③ 월간 아카이빙 — `POST /api/v1/export/archive`** `{ "storeId":1, "month":"2026-06" }`
+```json
+{ "success": true,
+  "data": { "salesKey":"sales/store1/sales-2026-06.csv",
+            "inventoryKey":"inventory/store1/store-inventory-2026-06.csv" } }
+```
+> **구현:** §5.9 `MonthlyExportScheduler`/`S3ArchiveService` 수동 트리거. 위 두 Exporter 결과를 S3에 업로드하고 키 반환.
 
 ### 5.9 월말 S3 아카이빙 (MonthlyExportScheduler)
 **매달 말일**에 해당 월(1개월치) **판매내역·재고관리내역 CSV를 생성해 S3에 저장**한다. 위 §5.8과 동일 컬럼 규약을 재사용.
