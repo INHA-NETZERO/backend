@@ -5,6 +5,7 @@ import com.netzero.common.error.ErrorCode;
 import com.netzero.forecast.dto.ForecastRequest;
 import com.netzero.forecast.dto.ForecastResponse;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -34,6 +35,7 @@ public class AiForecastClient implements ForecastPort {
 
     @Override
     @CircuitBreaker(name = "aiForecast", fallbackMethod = "fallback")
+    @Retry(name = "aiForecast", fallbackMethod = "fallback")
     public ForecastResponse orderRecommendation(ForecastRequest req) {
         try {
             return restClient.post()
@@ -42,8 +44,6 @@ public class AiForecastClient implements ForecastPort {
                     .body(req)
                     .retrieve()
                     .body(ForecastResponse.class);
-        } catch (ApiException e) {
-            throw e;
         } catch (Exception e) {
             throw new ApiException(ErrorCode.FORECAST_UNAVAILABLE, "AI server error: " + e.getMessage());
         }

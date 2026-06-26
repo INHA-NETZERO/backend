@@ -38,3 +38,8 @@ resilience4j:
         slidingWindowSize: 5
         failureRateThreshold: 50
         waitDurationInOpenState: 10s
+  retry:
+    instances:
+      aiForecast:
+        maxAttempts: 3
+        waitDuration: 200ms
