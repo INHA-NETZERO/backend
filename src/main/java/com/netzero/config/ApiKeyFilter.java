@@ -4,19 +4,17 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.annotation.Order;
-import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
-@Component
-@Order(1)
 public class ApiKeyFilter extends OncePerRequestFilter {
 
-    @Value("${security.api-key:}")
-    private String configuredKey;
+    private final String configuredKey;
+
+    public ApiKeyFilter(String configuredKey) {
+        this.configuredKey = configuredKey;
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)

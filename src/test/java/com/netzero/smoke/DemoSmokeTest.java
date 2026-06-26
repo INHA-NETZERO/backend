@@ -71,6 +71,8 @@ class DemoSmokeTest {
                 .file("file", csv.getBytes(StandardCharsets.UTF_8))
                 .param("storeId", "1"))
             // no X-API-Key header
-            .andExpect(status().isUnauthorized());
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
     }
 }

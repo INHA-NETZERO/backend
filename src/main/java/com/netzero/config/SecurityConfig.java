@@ -1,5 +1,6 @@
 package com.netzero.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -11,14 +12,16 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 public class SecurityConfig {
 
-    private final ApiKeyFilter apiKeyFilter;
+    @Value("${security.api-key:}")
+    private String configuredKey;
 
-    public SecurityConfig(ApiKeyFilter apiKeyFilter) {
-        this.apiKeyFilter = apiKeyFilter;
+    @Bean
+    public ApiKeyFilter apiKeyFilter() {
+        return new ApiKeyFilter(configuredKey);
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, ApiKeyFilter apiKeyFilter) throws Exception {
         http.csrf(csrf -> csrf.disable())
             .addFilterBefore(apiKeyFilter, UsernamePasswordAuthenticationFilter.class)
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
