@@ -68,7 +68,8 @@ class ExportControllerTest {
                 .param("storeId", "1")
                 .param("month", "2026-05"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.salesUrl").exists());
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.salesUrl").exists());
     }
 
     @Test

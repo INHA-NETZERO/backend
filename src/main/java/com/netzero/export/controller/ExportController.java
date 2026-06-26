@@ -79,7 +79,7 @@ public class ExportController {
      * @return presigned URLs for the uploaded sales and inventory CSVs
      */
     @PostMapping("/archive")
-    public ResponseEntity<Map<String, String>> archiveManual(
+    public ResponseEntity<ApiResponse<Map<String, String>>> archiveManual(
         @RequestParam Long storeId,
         @RequestParam String month
     ) throws IOException {
@@ -92,9 +92,9 @@ public class ExportController {
         String salesUrl = presignService.presignGet(PresignService.salesKey(storeId, from));
         String inventoryUrl = presignService.presignGet(PresignService.inventoryKey(storeId, from));
 
-        return ResponseEntity.ok(Map.of(
+        return ResponseEntity.ok(ApiResponse.ok(Map.of(
             "salesUrl", salesUrl,
             "inventoryUrl", inventoryUrl
-        ));
+        )));
     }
 }
