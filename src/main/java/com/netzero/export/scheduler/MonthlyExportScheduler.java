@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.YearMonth;
 
@@ -68,11 +69,11 @@ public class MonthlyExportScheduler {
         // Sales CSV
         ByteArrayOutputStream salesOut = new ByteArrayOutputStream();
         salesCsvExporter.export(storeId, from, to, salesOut);
-        s3ArchiveService.upload(PresignService.salesKey(storeId, from), salesOut.toString("UTF-8"));
+        s3ArchiveService.upload(PresignService.salesKey(storeId, from), salesOut.toString(StandardCharsets.UTF_8));
 
         // Inventory CSV (snapshot on last day of period)
         ByteArrayOutputStream invOut = new ByteArrayOutputStream();
         inventoryFlowExporter.export(storeId, to, invOut);
-        s3ArchiveService.upload(PresignService.inventoryKey(storeId, from), invOut.toString("UTF-8"));
+        s3ArchiveService.upload(PresignService.inventoryKey(storeId, from), invOut.toString(StandardCharsets.UTF_8));
     }
 }

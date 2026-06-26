@@ -1,12 +1,16 @@
 package com.netzero.export.controller;
 
+import com.netzero.common.ApiResponse;
+import com.netzero.common.error.ErrorCode;
 import com.netzero.export.scheduler.MonthlyExportScheduler;
 import com.netzero.export.service.InventoryFlowExporter;
 import com.netzero.export.service.PresignService;
 import com.netzero.export.service.SalesCsvExporter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
 import java.util.Map;
 
 @RestController
@@ -58,6 +63,12 @@ public class ExportController {
         response.setContentType("text/csv; charset=UTF-8");
         response.setHeader("Content-Disposition", "attachment; filename=\"store-inventory.csv\"");
         inventoryExporter.export(storeId, date, response.getOutputStream());
+    }
+
+    @ExceptionHandler(DateTimeParseException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBadMonth(DateTimeParseException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(ErrorCode.VALIDATION_ERROR, "Invalid month format: use YYYY-MM"));
     }
 
     /**
