@@ -9,6 +9,7 @@ import com.netzero.store.dto.InventorySummary;
 import com.netzero.store.repository.InventorySnapshotRepository;
 import com.netzero.store.repository.StoreRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -27,6 +28,7 @@ public class InventoryQueryService {
         this.stores = stores;
     }
 
+    @Transactional(readOnly = true)
     public InventoryStatusResponse statusOn(Long storeId, LocalDate date,
             String category, Boolean wasteTargetOnly) {
         if (!stores.existsById(storeId)) {
@@ -78,7 +80,7 @@ public class InventoryQueryService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         InventorySummary summary = new InventorySummary(totalWasteKg, totalWasteCarbonKg, totalWasteCostKrw);
 
-        String dayOfWeek = filtered.isEmpty() ? null : filtered.get(0).getDayOfWeek();
+        String dayOfWeek = snapshots.isEmpty() ? null : snapshots.get(0).getDayOfWeek();
         return new InventoryStatusResponse(storeId, date, dayOfWeek, rows.size(), summary, rows);
     }
 }
