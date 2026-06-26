@@ -23,15 +23,15 @@ public class ItemQueryService {
     public ItemListResponse findAll(String category, Boolean wasteTargetOnly) {
         List<ItemMaster> items;
         if (Boolean.TRUE.equals(wasteTargetOnly)) {
-            items = repo.findByWasteTargetTrue();
+            items = repo.findByWasteTargetTrueOrderByCategoryAscNameAsc();
         } else if (category != null) {
             try {
-                items = repo.findByCategory(ItemCategory.valueOf(category));
+                items = repo.findByCategoryOrderByNameAsc(ItemCategory.valueOf(category));
             } catch (IllegalArgumentException e) {
                 throw new ApiException(ErrorCode.VALIDATION_ERROR, "Unknown category: " + category);
             }
         } else {
-            items = repo.findAll();
+            items = repo.findAllByOrderByCategoryAscNameAsc();
         }
         var responses = items.stream().map(ItemMasterResponse::from).toList();
         return new ItemListResponse(responses.size(), responses);

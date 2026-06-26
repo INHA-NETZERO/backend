@@ -64,4 +64,24 @@ class ItemControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
     }
+
+    @Test
+    void listItems_byCategory_returnsSuccessTrue() throws Exception {
+        when(itemQueryService.findAll("원재료", null))
+                .thenReturn(new ItemListResponse(1, List.of()));
+
+        mockMvc.perform(get("/api/v1/items?category=원재료"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    void listItems_wasteTargetOnly_returnsSuccessTrue() throws Exception {
+        when(itemQueryService.findAll(null, true))
+                .thenReturn(new ItemListResponse(1, List.of()));
+
+        mockMvc.perform(get("/api/v1/items?wasteTargetOnly=true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
 }

@@ -11,7 +11,9 @@ public interface ItemMasterRepository extends JpaRepository<ItemMaster, Long> {
 
     Optional<ItemMaster> findByName(String name);
 
-    List<ItemMaster> findByWasteTargetTrue();
+    List<ItemMaster> findAllByOrderByCategoryAscNameAsc();
 
-    List<ItemMaster> findByCategory(ItemCategory category);
+    List<ItemMaster> findByWasteTargetTrueOrderByCategoryAscNameAsc();
+
+    List<ItemMaster> findByCategoryOrderByNameAsc(ItemCategory category);
 }

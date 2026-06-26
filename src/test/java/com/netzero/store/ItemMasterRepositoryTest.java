@@ -29,19 +29,19 @@ class ItemMasterRepositoryTest {
     @Test
     void findByWasteTargetTrueFiltersCorrectly() {
         // 우유, 치즈, 원두, 베이커리 => 4 waste-target items
-        var wasteItems = repo.findByWasteTargetTrue();
+        var wasteItems = repo.findByWasteTargetTrueOrderByCategoryAscNameAsc();
         assertThat(wasteItems).hasSize(4);
         assertThat(wasteItems).allMatch(i -> i.isWasteTarget());
     }
 
     @Test
     void findByCategoryReturnsCorrectSubset() {
-        var rawMaterials = repo.findByCategory(ItemCategory.원재료);
+        var rawMaterials = repo.findByCategoryOrderByNameAsc(ItemCategory.원재료);
         // 우유, 치즈, 원두 => 3 items
         assertThat(rawMaterials).hasSize(3);
         assertThat(rawMaterials).allMatch(i -> i.getCategory() == ItemCategory.원재료);
 
-        var beverages = repo.findByCategory(ItemCategory.판매음료);
+        var beverages = repo.findByCategoryOrderByNameAsc(ItemCategory.판매음료);
         // 아메리카노 => 1 item
         assertThat(beverages).hasSize(1);
     }

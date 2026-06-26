@@ -5,7 +5,7 @@ import com.netzero.store.domain.ItemMaster;
 import java.math.BigDecimal;
 
 public record ItemMasterResponse(
-        Long id,
+        Long itemId,
         String name,
         String category,
         boolean wasteTarget,
