@@ -837,6 +837,41 @@ LocalDate lastOrder = orderedQty.signum() > 0 ? businessDate : prevLastOrderDate
 - [ ] **Step 5: 실행 → PASS.**
 - [ ] **Step 6: Commit** — `git commit -m "feat: inventory CSV ingest with ledger computation (M1)"`
 
+### Task 1.5b: 재고현황 조회 API (`GET /api/v1/inventory`)
+
+**Files:**
+- Create: `store/dto/InventoryStatusResponse.java` (행+요약), `store/service/InventoryQueryService.java`, `store/controller/InventoryController.java`
+- Test: `src/test/java/com/netzero/store/InventoryControllerTest.java`
+
+**Interfaces:**
+- Consumes: `InventorySnapshotRepository`(Task 1.5), `StoreRepository`(매장 검증), `ApiResponse`(Task 1.3).
+- Produces:
+  - `record InventoryRow(Long itemId, String itemName, String category, String unit, BigDecimal orderedQty, BigDecimal openingStock, BigDecimal demand, BigDecimal actualSales, BigDecimal stockout, BigDecimal wasteQty, BigDecimal closingStock, BigDecimal wasteKg, BigDecimal wasteCarbonKg, BigDecimal wasteCostKrw, LocalDate lastOrderDate)`.
+  - `record InventorySummary(BigDecimal totalWasteKg, BigDecimal totalWasteCarbonKg, BigDecimal totalWasteCostKrw)`.
+  - `record InventoryStatusResponse(Long storeId, LocalDate businessDate, String dayOfWeek, int itemCount, InventorySummary summary, List<InventoryRow> items)`.
+  - Repo 추가: `List<InventorySnapshot> findByStoreIdAndBusinessDate(Long, LocalDate)`.
+  - `InventoryQueryService.statusOn(Long storeId, LocalDate date, String category, Boolean wasteTargetOnly): InventoryStatusResponse` — 매장 없으면 `ApiException(STORE_NOT_FOUND)`. `category`/`wasteTargetOnly` 필터(품목명·구분은 InventorySnapshot 비정규화 컬럼 또는 ItemMaster 조인). 정렬 `category`→`itemName`. 스냅샷 없으면 `itemCount=0, items=[], summary` 합계 0(404 아님). `summary`는 필터 후 행들의 폐기 합계.
+  - `GET /api/v1/inventory?storeId=&date=&category=&wasteTargetOnly=` → `ApiResponse<InventoryStatusResponse>` (backend_api_spec §9.1). 날짜 파싱 실패 → `VALIDATION_ERROR`(400).
+
+- [ ] **Step 1: 실패 테스트 작성**
+
+```java
+// test/.../store/InventoryControllerTest.java
+// given: inventory_snapshot에 특정 날짜 우유(wasteQty=1,wasteKg=1.03,closingStock=2 등) 적재
+// GET /api/v1/inventory?storeId=1&date=2026-06-27 → success=true, data.itemCount≥1,
+//   items[0].itemName="우유", summary.totalWasteKg=1.03
+// 스냅샷 없는 날짜 → itemCount=0, items=[] (404 아님)
+// 날짜 형식 깨짐 → 400 VALIDATION_ERROR
+```
+
+- [ ] **Step 2: 실행 → FAIL** — Run: `./gradlew test --tests com.netzero.store.InventoryControllerTest`.
+
+- [ ] **Step 3: DTO + InventoryQueryService + InventoryController 구현** (요약 합계는 서비스에서 `BigDecimal` 누적; 컨트롤러는 `ApiResponse.ok`).
+
+- [ ] **Step 4: 실행 → PASS.**
+
+- [ ] **Step 5: Commit** — `git add src/main/java/com/netzero/store src/test/java/com/netzero/store && git commit -m "feat: inventory status query API GET /inventory (M1)"`
+
 ### Task 1.6: 로컬 CSV 추출 (`GET /export/sales.csv`, `/export/store-inventory.csv`)
 
 **Files:**
