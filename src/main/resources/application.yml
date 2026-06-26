@@ -1,0 +1,32 @@
+spring:
+  application.name: zerowave
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/zerowave?serverTimezone=Asia/Seoul&characterEncoding=UTF-8}
+    username: ${DB_USER:zerowave}
+    password: ${DB_PASSWORD:zerowave}
+  jpa:
+    hibernate.ddl-auto: validate
+    open-in-view: false
+    properties.hibernate.jdbc.time_zone: Asia/Seoul
+  flyway.enabled: true
+external:
+  kma:
+    base-url: https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0
+    service-key: ${KMA_SERVICE_KEY:}
+ai:
+  base-url: ${AI_SERVER_URL:http://localhost:8000}
+  order-recommendation-path: /v1/order-recommendation
+  forecast-path: /v1/forecast
+  generate-path: /v1/generate
+  sales-history-months: 3
+storage:
+  s3:
+    bucket: ${S3_BUCKET:zerowave}
+    region: ${AWS_REGION:ap-northeast-2}
+    endpoint: ${S3_ENDPOINT:}
+    presign-expiry-seconds: 600
+security:
+  api-key: ${SECURITY_API_KEY:dev-demo-key}
+optimization: { default-cu: 1.0, default-co: 1.0 }
+carbon: { car-kgco2-per-km: 4.6 }
+management.endpoints.web.exposure.include: health,info,metrics,prometheus
