@@ -4,6 +4,7 @@ import com.netzero.chat.dto.ChatRequest;
 import com.netzero.chat.dto.ChatResponse;
 import com.netzero.chat.service.ChatService;
 import com.netzero.common.ApiResponse;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -17,7 +18,7 @@ public class ChatController {
     }
 
     @PostMapping("/chat")
-    public ApiResponse<ChatResponse> chat(@RequestBody ChatRequest req) {
+    public ApiResponse<ChatResponse> chat(@Valid @RequestBody ChatRequest req) {
         return ApiResponse.ok(chatService.chat(req));
     }
 }
