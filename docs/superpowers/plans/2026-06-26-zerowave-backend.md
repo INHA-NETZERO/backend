@@ -64,12 +64,14 @@ src/test/java/com/netzero/...                 (각 도메인 테스트)
 ### Task 0.1: 의존성·설정 갱신과 부팅 확인
 
 **Files:**
+
 - Modify: `build.gradle`, `.gitignore`
 - Create: `src/main/resources/application.yml`, `src/test/resources/application.yml`, `.env.example`, `src/main/java/com/netzero/config/SecurityConfig.java`
 - Delete: `src/main/resources/application.properties` (yml로 대체)
 - Test: `src/test/java/com/netzero/NetzeroApplicationTests.java` (기존)
 
 **Interfaces:**
+
 - Produces: 부팅 가능한 Spring Boot 3.5.13 앱(웹·JPA·validation·actuator·flyway·s3·spring-dotenv 의존성 포함). `.env`로 민감정보 주입(`.env.example` 템플릿 제공).
 
 - [ ] **Step 1: build.gradle 교체**
@@ -146,6 +148,7 @@ management.endpoints.web.exposure.include: health,info,metrics,prometheus
 > AWS 자격증명(`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`)은 application.yml에 두지 않고 AWS SDK 기본 체인(환경변수/.env)으로 주입한다.
 
 For tests, add `src/test/resources/application.yml` overriding datasource to H2 and `spring.jpa.hibernate.ddl-auto: validate` with Flyway on H2 (`spring.flyway.url` inherits). Use H2 **MySQL** mode so V1 DDL(`AUTO_INCREMENT`, `JSON`)이 운영 MySQL과 동일하게 적용된다:
+
 ```yaml
 spring:
   datasource:
@@ -160,6 +163,7 @@ spring:
 민감정보는 `.env`로 관리하고 커밋하지 않는다. `.env.example`은 키 목록만 담은 템플릿(값은 더미)으로 커밋한다. `spring-dotenv`가 부팅 시 `.env`를 읽어 application.yml의 `${VAR}`로 주입한다(실행 전 `cp .env.example .env` 후 값 채움).
 
 `.env.example` (프로젝트 루트, 커밋함):
+
 ```dotenv
 # === Database (AWS RDS · MySQL 8) ===
 DB_URL=jdbc:mysql://your-instance.xxxxx.ap-northeast-2.rds.amazonaws.com:3306/zerowave?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
@@ -184,6 +188,7 @@ SECURITY_API_KEY=dev-demo-key     # 쓰기 엔드포인트 X-API-Key
 ```
 
 `.gitignore`에 다음 줄 추가(이미 있으면 생략):
+
 ```gitignore
 .env
 ```
@@ -205,6 +210,7 @@ public class SecurityConfig {
   }
 }
 ```
+
 > 이게 없으면 starter-security 기본 설정이 모든 요청을 401로 막아 M1~M4 컨트롤러 테스트가 실패한다. M5(Task 5.2)에서 쓰기 엔드포인트 API Key로 교체.
 
 - [ ] **Step 5: application.properties 삭제**
@@ -233,15 +239,17 @@ git commit -m "build: upgrade to Spring Boot 3.5.13, add core deps, .env.example
 ### Task 1.1: Flyway V1 스키마 + 공통 BaseEntity·enum
 
 **Files:**
+
 - Create: `src/main/resources/db/migration/V1__schema.sql`
 - Create: `src/main/java/com/netzero/common/BaseEntity.java`
 - Create: `src/main/java/com/netzero/store/domain/ItemCategory.java`, `StorageCondition.java`
 - Test: `src/test/java/com/netzero/migration/FlywayMigrationTest.java`
 
 **Interfaces:**
+
 - Produces: 테이블 `store, item_master, order_policy, sales_record, inventory_snapshot, weather_forecast, demand_forecast, order_recommendation, carbon_saving`. enum 값 `ItemCategory{완제품,원재료,판매음료,소모품}`, `StorageCondition{상온,냉장,냉동}`.
 
-- [ ] **Step 1: V1__schema.sql 작성** (backend_spec §3.2 필드 그대로)
+- [ ] **Step 1: V1\_\_schema.sql 작성** (backend_spec §3.2 필드 그대로)
 
 > MySQL 8 방언: PK는 `BIGINT AUTO_INCREMENT`, 기본시각은 `TIMESTAMP DEFAULT CURRENT_TIMESTAMP`. `CHECK`·`JSON`은 MySQL 8(8.0.16+)·H2 MySQL 모드 모두 네이티브 지원. 인라인 `REFERENCES`는 MySQL InnoDB가 무시하나(데모는 앱 레벨 무결성) H2 MySQL 모드는 강제 — 양쪽 모두 DDL 오류 없음.
 
@@ -318,11 +326,13 @@ CREATE TABLE carbon_saving (
 package com.netzero.store.domain;
 public enum ItemCategory { 완제품, 원재료, 판매음료, 소모품 }
 ```
+
 ```java
 // store/domain/StorageCondition.java
 package com.netzero.store.domain;
 public enum StorageCondition { 상온, 냉장, 냉동 }
 ```
+
 ```java
 // common/BaseEntity.java
 package com.netzero.common;
@@ -373,11 +383,13 @@ git commit -m "feat: add V1 schema and base entities (M1)"
 ### Task 1.2: 마스터 엔티티 + 시드(V2~V4) + 리포지토리
 
 **Files:**
+
 - Create: `store/domain/{Store,ItemMaster,OrderPolicy}.java`, `store/repository/{StoreRepository,ItemMasterRepository,OrderPolicyRepository}.java`
 - Create: `db/migration/V2__seed_item_master.sql`, `V3__seed_store_demo.sql`, `V4__seed_order_policy.sql`
 - Test: `src/test/java/com/netzero/store/ItemMasterRepositoryTest.java`
 
 **Interfaces:**
+
 - Produces:
   - `ItemMaster` getters: `getId():Long, getName():String, getCategory():ItemCategory, isWasteTarget():boolean, getUnit():String, getShelfLifeDays():Integer, getKgPerUnit():BigDecimal, getEfProd():BigDecimal, getEfWaste():BigDecimal, getPurchasePrice():BigDecimal`.
   - `OrderPolicy` getters: `getItemId():Long, getOrderCycleDays():int, getLeadTimeDays():int, getOrderLotUnit():BigDecimal, getSafetyZ():BigDecimal`.
@@ -412,6 +424,7 @@ public class ItemMaster extends BaseEntity {
   public BigDecimal getPurchasePrice(){return purchasePrice;}
 }
 ```
+
 (`Store`, `OrderPolicy`도 동일 패턴으로 V1 컬럼 매핑.)
 
 - [ ] **Step 2: 시드 마이그레이션 작성** (대표 품목 6~8개; 값은 backend_spec EF 예시)
@@ -426,10 +439,12 @@ INSERT INTO item_master (name,category,waste_target,unit,shelf_life_days,storage
  ('원두','원재료',true,'kg',180,'상온',1.0,17.0,0.2,25000,'원/kg','커피 생두/원두'),
  ('컵','소모품',false,'ea',3650,'상온',0,0,0,40,'원/ea','폐기대상 아님');
 ```
+
 ```sql
 -- V3__seed_store_demo.sql
 INSERT INTO store (name,region,nx,ny) VALUES ('데모카페 강남점','서울_강남',61,125);
 ```
+
 ```sql
 -- V4__seed_order_policy.sql  (store_id=1 가정, 단일 매장)
 INSERT INTO order_policy (store_id,item_id,item_name,category,order_method,order_cycle_days,lead_time_days,safety_z,order_lot_unit,note)
@@ -453,6 +468,7 @@ class ItemMasterRepositoryTest {
   }
 }
 ```
+
 > `@DataJpaTest`는 Flyway 시드를 적용하므로 V2 데이터가 로드됨.
 
 - [ ] **Step 4: 실행**
@@ -470,10 +486,12 @@ git commit -m "feat: add master entities, seeds, repositories (M1)"
 ### Task 1.3: 공통 응답 Envelope + 에러 처리
 
 **Files:**
+
 - Create: `common/ApiResponse.java`, `common/error/{ErrorCode,ApiException,GlobalExceptionHandler}.java`
 - Test: `src/test/java/com/netzero/common/GlobalExceptionHandlerTest.java`
 
 **Interfaces:**
+
 - Produces:
   - `ApiResponse<T>` — `record ApiResponse<T>(boolean success, T data, ApiError error)` with `static <T> ApiResponse<T> ok(T data)` (success=true, error=null) and `static ApiResponse<?> error(ErrorCode code, String message)`. `record ApiError(String code, String message)`. **null 필드는 JSON에서 생략**(`@JsonInclude(NON_NULL)`).
   - `enum ErrorCode` (각 `HttpStatus status` + `String defaultMessage`): `VALIDATION_ERROR, INVALID_CSV, ITEM_NOT_FOUND, STORE_NOT_FOUND, CONTENT_NOT_FOUND, FORECAST_UNAVAILABLE, WEATHER_FETCH_FAILED, LLM_UNAVAILABLE, PIPELINE_ALREADY_RUNNING, INTERNAL_ERROR`.
@@ -497,6 +515,7 @@ public record ApiResponse<T>(boolean success, T data, ApiError error) {
   }
 }
 ```
+
 ```java
 // common/error/ErrorCode.java
 package com.netzero.common.error;
@@ -516,6 +535,7 @@ public enum ErrorCode {
   ErrorCode(HttpStatus s, String m){ this.status=s; this.defaultMessage=m; }
 }
 ```
+
 ```java
 // common/error/ApiException.java
 package com.netzero.common.error;
@@ -587,10 +607,12 @@ class GlobalExceptionHandlerTest {
 ### Task 1.3b: 품목마스터 조회 API (`GET /api/v1/items` + `/items/{id}`)
 
 **Files:**
+
 - Create: `store/dto/ItemMasterResponse.java`, `store/service/ItemQueryService.java`, `store/controller/ItemController.java`
 - Test: `src/test/java/com/netzero/store/ItemControllerTest.java`
 
 **Interfaces:**
+
 - Consumes: `ItemMasterRepository`(Task 1.2), `ApiResponse`(Task 1.3).
 - Produces:
   - `record ItemMasterResponse(Long itemId, String name, ItemCategory category, boolean wasteTarget, String unit, Integer shelfLifeDays, StorageCondition storageCondition, BigDecimal kgPerUnit, BigDecimal efProd, BigDecimal efWaste, BigDecimal purchasePrice, String priceUnit, String note)` — `static from(ItemMaster)` 매퍼.
@@ -619,12 +641,14 @@ class GlobalExceptionHandlerTest {
 ### Task 1.4: 판매 CSV 수집 (`POST /api/v1/ingest/sales` + `/ingest/sales/daily`)
 
 **Files:**
+
 - Create: `store/domain/SalesRecord.java`, `store/repository/SalesRecordRepository.java`
 - Create: `ingest/CsvParser.java`, `ingest/service/SalesCsvService.java`, `ingest/dto/{IngestResult,DailyIngestResult}.java`, `ingest/controller/IngestController.java`
 - Create: `weather/WeatherProvider.java`, `weather/NoOpWeatherProvider.java`, `weather/dto/DailyWeather.java`
 - Test: `src/test/java/com/netzero/ingest/SalesCsvServiceTest.java`
 
 **Interfaces:**
+
 - Consumes: `ItemMasterRepository.findByName`, `WeatherProvider`.
 - Produces:
   - `record IngestResult(int accepted, int rejected, List<RowError> errors)`, `record RowError(int line, String code, String value)`.
@@ -632,7 +656,7 @@ class GlobalExceptionHandlerTest {
   - `record DailyWeather(String weather, BigDecimal avgTemp, BigDecimal precipitationMm)`.
   - `interface WeatherProvider { Optional<DailyWeather> lookup(Long storeId, LocalDate date); }` — 기상청 날씨 조회 시임. M1엔 `NoOpWeatherProvider`(항상 `Optional.empty()`, `@ConditionalOnMissingBean` 기본 빈). M3에서 `KmaWeatherProvider`가 실연동(Task 3.2).
   - `SalesCsvService.ingest(Long storeId, InputStream csv): IngestResult` — 풀컬럼 CSV(헤더 `날짜,요일,날씨,기온,강수mm,행사,신메뉴,품목,구분,판매수량,비고_시나리오`).
-  - `SalesCsvService.ingestDaily(Long storeId, InputStream csv): DailyIngestResult` — 하루치 CSV(헤더 `날짜,요일,품목,구분,판매수량,행사,신메뉴,비고_시나리오`). **행사/신메뉴/비고_시나리오는 행(품목)별** 컬럼에서 읽어 `SalesRecord.event/newMenu/scenarioNote`에 저장(전체 일괄 아님). **날씨는 `WeatherProvider.lookup(storeId,날짜)`로 보강**(M1 NoOp이면 null, M3 KMA면 채움).
+  - `SalesCsvService.ingestDaily(Long storeId, InputStream csv): DailyIngestResult` — 하루치 CSV(헤더 `날짜,요일,품목,구분,판매수량,행사,신메뉴,비고_시나리오`). **행사/신메뉴/비고\_시나리오는 행(품목)별** 컬럼에서 읽어 `SalesRecord.event/newMenu/scenarioNote`에 저장(전체 일괄 아님). **날씨는 `WeatherProvider.lookup(storeId,날짜)`로 보강**(M1 NoOp이면 null, M3 KMA면 채움).
   - 컨트롤러는 `ApiResponse<IngestResult>` / `ApiResponse<DailyIngestResult>` 반환.
 
 - [ ] **Step 1: SalesRecord 엔티티 + repo + WeatherProvider 시임 작성** (SalesRecord: V1 컬럼 매핑, `getQuantitySold():BigDecimal`, `getBusinessDate():LocalDate`, `getItemId():Long`; repo: `List<SalesRecord> findByStoreIdAndBusinessDateBetween(Long, LocalDate, LocalDate)`).
@@ -643,6 +667,7 @@ package com.netzero.weather.dto;
 import java.math.BigDecimal;
 public record DailyWeather(String weather, BigDecimal avgTemp, BigDecimal precipitationMm) {}
 ```
+
 ```java
 // weather/WeatherProvider.java
 package com.netzero.weather;
@@ -650,6 +675,7 @@ import com.netzero.weather.dto.DailyWeather;
 import java.time.LocalDate; import java.util.Optional;
 public interface WeatherProvider { Optional<DailyWeather> lookup(Long storeId, LocalDate date); }
 ```
+
 ```java
 // weather/NoOpWeatherProvider.java — M1 기본 빈(KMA 미연동 시)
 package com.netzero.weather;
@@ -722,6 +748,7 @@ public class CsvParser {
   }
 }
 ```
+
 ```java
 // ingest/service/SalesCsvService.java
 package com.netzero.ingest.service;
@@ -775,6 +802,7 @@ public class SalesCsvService {
   private static String nz(String s){ return s==null||s.isBlank()? null : s; }
 }
 ```
+
 (`SalesRecord`에 위 인자 순서의 생성자 추가. `IngestResult`·`DailyIngestResult` record 작성.)
 
 - [ ] **Step 5: 실행하여 통과** — Run: `./gradlew test --tests com.netzero.ingest.SalesCsvServiceTest` → Expected: PASS.
@@ -812,12 +840,15 @@ public class IngestController {
 ### Task 1.5: 재고 CSV 수집 + InventorySnapshot 엔티티
 
 **Files:**
+
 - Create: `store/domain/InventorySnapshot.java`, `store/repository/InventorySnapshotRepository.java`
-- Create: `ingest/service/InventoryCsvService.java`, controller 메서드 추가
-- Test: `src/test/java/com/netzero/ingest/InventoryCsvServiceTest.java`
+- Create: `ingest/service/InventoryCsvService.java`
+- Modify: `ingest/controller/IngestController.java`(Task 1.4의 `@RequestMapping("/api/v1/ingest")`에 `POST /inventory` 핸들러 추가)
+- Test: `src/test/java/com/netzero/ingest/InventoryCsvServiceTest.java`, `src/test/java/com/netzero/ingest/IngestInventoryControllerTest.java`
 
 **Interfaces:**
-- Produces: `InventorySnapshot` getters (전 컬럼). Repo: `Optional<InventorySnapshot> findTopByStoreIdAndItemIdOrderByBusinessDateDesc(Long,Long)` (최신 기말재고·lastOrderDate 조회), `findByStoreIdAndBusinessDateBetween`. `InventoryCsvService.ingest(Long,InputStream):IngestResult` (헤더 `날짜,품목,구분,단위,발주,기초재고,수요,실판매,결품,폐기,기말재고`; 산출 컬럼 폐기_kg·탄소·비용은 적재 시 ItemMaster로 계산).
+
+- Produces: `InventorySnapshot` getters (전 컬럼). Repo: `Optional<InventorySnapshot> findTopByStoreIdAndItemIdOrderByBusinessDateDesc(Long,Long)` (최신 기말재고·lastOrderDate 조회), `findByStoreIdAndBusinessDateBetween`. `InventoryCsvService.ingest(Long,InputStream):IngestResult` (헤더 `날짜,품목,구분,단위,발주,기초재고,수요,실판매,결품,폐기,기말재고`; 산출 컬럼 폐기\_kg·탄소·비용은 적재 시 ItemMaster로 계산).
 
 - [ ] **Step 1: InventorySnapshot 엔티티+repo 작성.**
 - [ ] **Step 2: 실패 테스트 작성** — CSV 1행 적재 후 `closing_stock`·`waste_kg`(폐기×kgPerUnit)·`waste_carbon_kg`(폐기kg×(efProd+efWaste))·`waste_cost_krw`(폐기×purchasePrice)·`last_order_date`(ordered_qty>0이면 businessDate) 검증.
@@ -829,22 +860,27 @@ public class IngestController {
 
 - [ ] **Step 3: 실행 → FAIL.**
 - [ ] **Step 4: InventoryCsvService 구현** — CSV 파싱 후 품목 매칭, 산출 컬럼 계산:
+
 ```java
 BigDecimal kg = wasteQty.multiply(item.getKgPerUnit());
 BigDecimal carbon = item.isWasteTarget()? kg.multiply(item.getEfProd().add(item.getEfWaste())) : BigDecimal.ZERO;
 BigDecimal cost = wasteQty.multiply(item.getPurchasePrice());
 LocalDate lastOrder = orderedQty.signum() > 0 ? businessDate : prevLastOrderDate;
 ```
+
 - [ ] **Step 5: 실행 → PASS.**
-- [ ] **Step 6: Commit** — `git commit -m "feat: inventory CSV ingest with ledger computation (M1)"`
+- [ ] **Step 6: `POST /api/v1/ingest/inventory` 컨트롤러 매핑 추가** — `IngestController`에 `@PostMapping("/inventory")`(multipart `file` + `storeId`) → `InventoryCsvService.ingest` 호출 → `ApiResponse.ok(IngestResult)`(backend_api_spec §2.3). `@WebMvcTest` 슬라이스로 multipart 업로드 → `$.success=true`, `$.data.accepted` 검증.
+- [ ] **Step 7: Commit** — `git commit -m "feat: inventory CSV ingest + POST /ingest/inventory (M1)"`
 
 ### Task 1.5b: 재고현황 조회 API (`GET /api/v1/inventory`)
 
 **Files:**
+
 - Create: `store/dto/InventoryStatusResponse.java` (행+요약), `store/service/InventoryQueryService.java`, `store/controller/InventoryController.java`
 - Test: `src/test/java/com/netzero/store/InventoryControllerTest.java`
 
 **Interfaces:**
+
 - Consumes: `InventorySnapshotRepository`(Task 1.5), `StoreRepository`(매장 검증), `ApiResponse`(Task 1.3).
 - Produces:
   - `record InventoryRow(Long itemId, String itemName, String category, String unit, BigDecimal orderedQty, BigDecimal openingStock, BigDecimal demand, BigDecimal actualSales, BigDecimal stockout, BigDecimal wasteQty, BigDecimal closingStock, BigDecimal wasteKg, BigDecimal wasteCarbonKg, BigDecimal wasteCostKrw, LocalDate lastOrderDate)`.
@@ -876,10 +912,12 @@ LocalDate lastOrder = orderedQty.signum() > 0 ? businessDate : prevLastOrderDate
 ### Task 1.6: 로컬 CSV 추출 (`GET /export/sales.csv`, `/export/store-inventory.csv`)
 
 **Files:**
+
 - Create: `common/web/CsvWriter.java`, `export/service/{SalesCsvExporter,InventoryFlowExporter}.java`, `export/controller/ExportController.java`
 - Test: `src/test/java/com/netzero/export/ExportServiceTest.java`
 
 **Interfaces:**
+
 - Consumes: `SalesRecordRepository`, `InventorySnapshotRepository`, `ItemMasterRepository`.
 - Produces: `SalesCsvExporter.export(Long storeId, YearMonth month): String` (CSV 본문, 헤더 `날짜,요일,날씨,기온,강수mm,행사,신메뉴,품목,구분,판매수량,비고_시나리오`). `InventoryFlowExporter.export(Long, YearMonth): String` (헤더 = InventorySnapshot 15컬럼). 컨트롤러는 `text/csv; charset=UTF-8` + BOM.
 
@@ -897,10 +935,12 @@ LocalDate lastOrder = orderedQty.signum() > 0 ? businessDate : prevLastOrderDate
 ### Task 2.1: QuantileInterpolator (F⁻¹ 구간선형보간)
 
 **Files:**
+
 - Create: `order/service/QuantileInterpolator.java`
 - Test: `src/test/java/com/netzero/order/QuantileInterpolatorTest.java`
 
 **Interfaces:**
+
 - Produces: `static double interpolate(double p10, double p50, double p90, double cr)` — backend_spec §4.3 규칙:
   CR≤0.10→p10 외삽, 0.10<CR≤0.50→(p10,p50), 0.50<CR≤0.90→(p50,p90), CR>0.90→p90 외삽.
 
@@ -950,10 +990,12 @@ public final class QuantileInterpolator {
 ### Task 2.2: Newsvendor (CR + 커버기간 합산 + lot 올림)
 
 **Files:**
+
 - Create: `order/service/Newsvendor.java`
 - Test: `src/test/java/com/netzero/order/NewsvendorTest.java`
 
 **Interfaces:**
+
 - Consumes: `QuantileInterpolator.interpolate`.
 - Produces:
   - `record Quantiles(double p10, double p50, double p90)`.
@@ -1016,10 +1058,12 @@ public final class Newsvendor {
 ### Task 2.3: CarbonAccountingService (보장/잠재 분리)
 
 **Files:**
+
 - Create: `carbon/service/CarbonAccountingService.java`, `carbon/dto/CarbonResult.java`
 - Test: `src/test/java/com/netzero/carbon/CarbonAccountingServiceTest.java`
 
 **Interfaces:**
+
 - Produces: `record CarbonResult(double wasteAvoidedKg, double guaranteedSavingKg, double potentialSavingKg)`.
   `CarbonResult compute(double wasteAvoidedQty, double kgPerUnit, double efProd, double efWaste, boolean wasteTarget)`:
   - `wasteAvoidedKg = wasteAvoidedQty*kgPerUnit`; non-wasteTarget이면 모두 0.
@@ -1047,11 +1091,13 @@ public final class Newsvendor {
 ### Task 2.4: ForecastPort 인터페이스 + 목 구현
 
 **Files:**
+
 - Create: `forecast/dto/{ForecastRequest,ForecastResponse,DailyQuantile,ItemForecast,ForecastRow,CoverageSpec}.java`, `forecast/port/ForecastPort.java`
 - Create: `forecast/port/MockForecastClient.java` (기본 빈; `AiForecastClient`(M3 `@Primary`) 없을 때 활성 — `@ConditionalOnMissingBean(ForecastPort.class)`), `weather/dto/WeatherSnapshot.java`
 - Test: `src/test/java/com/netzero/forecast/MockForecastClientTest.java`
 
 **Interfaces:**
+
 - Produces:
   - `record WeatherSnapshot(LocalDate forecastDate, BigDecimal avgTemp, BigDecimal precipitationMm, Integer precipitationProb, Integer skyCode)`.
   - `record CoverageSpec(int leadTimeDays, int orderCycleDays, int coverageDays)`.
@@ -1070,9 +1116,10 @@ public final class Newsvendor {
 - [ ] **Step 5: 실행 → PASS.**
 - [ ] **Step 6: Commit** — `git commit -m "feat: ForecastPort + mock client (M2)"`
 
-### Task 2.5: OrderOptimizationService + CarbonSaving 저장 + `/recommendations`·`/carbon/today`
+### Task 2.5: OrderOptimizationService + CarbonSaving 저장 + `/recommendations`·`/carbon/*`
 
 **Files:**
+
 - Create: `feature/FeatureBuilder.java`, `feature/dto/FeatureVector.java`
 - Create: `forecast/domain/DemandForecast.java`, `forecast/repository/*`, `forecast/service/DemandForecastService.java`
 - Create: `order/domain/OrderRecommendation.java`, `order/repository/*`, `order/service/OrderOptimizationService.java`, `order/controller/RecommendationController.java`, `order/dto/*`
@@ -1082,6 +1129,7 @@ public final class Newsvendor {
 **책임 분리(중요):** **예측**(ForecastPort 호출·DemandForecast 저장)은 `DemandForecastService`가, **발주/탄소 산정**(저장된 예측을 읽어 newsvendor)은 `OrderOptimizationService`가 담당한다. 날씨·presigned URL은 `DemandForecastService.forecast`의 **인자**로 받는다(M2 테스트는 빈 리스트, M3 파이프라인이 실제 값 주입). 이렇게 해야 weather(M3)/presign(M3) 의존이 optimize로 새지 않는다.
 
 **Interfaces:**
+
 - Consumes: `FeatureBuilder`, `ForecastPort`, `Newsvendor`, `CarbonAccountingService`, `ItemMasterRepository`, `OrderPolicyRepository`, `InventorySnapshotRepository`, `SalesRecordRepository`, `DemandForecastRepository`.
 - Produces:
   - `FeatureBuilder.build(Long storeId, Long itemId, LocalDate targetDate): Map<String,Object>` → `{dayOfWeek, isHoliday(M2=false 고정), ma7(최근7일 평균), trend(M2=0.0)}`. 공휴일·날씨 피처 고도화는 M3 Task 3.3.
@@ -1090,6 +1138,8 @@ public final class Newsvendor {
   - `OrderRecommendation`에 `actualQuantity`(BigDecimal, nullable)·`actualUpdatedAt`(Instant/LocalDateTime, nullable) 필드 추가. optimize는 신규행 생성 시에만 둘을 NULL로 두고, 기존행 갱신 시에는 두 필드를 건드리지 않는다.
   - `DemandForecast.features` / `OrderRecommendation.rationale`는 `String` 필드 + `@JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)` 매핑(JSON 컬럼).
   - upsert는 각 `findByStoreIdAndItemIdAndTargetDate` 후 갱신/신규.
+  - `CarbonSavingRepository`: `findByStoreIdAndItemIdAndTargetDate(Long,Long,LocalDate)`(upsert·today byItem용), `List<CarbonSaving> findByStoreIdAndTargetDate(Long,LocalDate)`(carbon/today 합산), `List<CarbonSaving> findByStoreIdAndTargetDateBetween(Long,LocalDate,LocalDate)`(carbon/savings 시계열·summary용).
+  - **`wasteCostAvoidedKrw` 산출 경로(§4.1):** `carbon_saving`엔 비용 컬럼이 없으므로 carbon/today 조회 시 `ItemMaster` 조인으로 파생 — `Σ over 품목 (wasteAvoidedKg ÷ kgPerUnit × purchasePrice)`(폐기대상·`kgPerUnit>0`만, 0이면 제외해 0division 방지). 즉 회피한 폐기 무게를 관리단위로 환산 후 매입단가를 곱해 합산.
 
 - [ ] **Step 1: FeatureBuilder + 엔티티/리포지토리 작성.** (FeatureBuilder는 `SalesRecordRepository`로 ma7 계산. DemandForecast/OrderRecommendation/CarbonSaving 엔티티 + repo.)
 - [ ] **Step 2: 통합 테스트 작성** — 시드 우유에 InventorySnapshot(closingStock 12, lastOrderDate 8일 전)·과거 판매 적재 → `forecast(1L, date, [milk], [], [])`(MockForecastClient) → `optimize(1L, date, [milk])` → OrderRecommendation `recommendedQuantity` lot(2) 배수, `criticalRatio`∈(0,1), CarbonSaving 저장 확인.
@@ -1118,20 +1168,23 @@ class OrderOptimizationServiceTest {
   - cu/co: `co = purchasePrice + 폐기처리비(config 또는 0)`, `cu = max(sellPrice − purchasePrice, default-cu)`; sellPrice 미보유 시 `default-cu`(명세 §4.3).
   - ΔQ: `baseline − Q*`, baseline = 과거 동요일 평균 판매 × coverageDays.
 - [ ] **Step 5: 실행 → PASS.**
-- [ ] **Step 6: 컨트롤러 추가** — `RecommendationController`/`CarbonController`. **응답은 `ApiResponse.ok(...)`로 감싼다.**
+- [ ] **Step 6: 컨트롤러 추가** — `RecommendationController`/`CarbonController`. **응답은 `ApiResponse.ok(...)`로 감싼다.** 네 엔드포인트 모두 `@WebMvcTest` 슬라이스에서 **envelope 검증**(`$.success=true`, payload 키 확인).
   - `GET /api/v1/recommendations?storeId=&date=`: 저장된 `OrderRecommendation` + **`OrderPolicy`(coverage) + `DemandForecast`(horizonForecast) 조인**으로 items 조립(backend_api_spec §3.3 형태). 응답에 `recommendedQuantity`와 `actualQuantity`(미입력 시 `null`) 모두 포함.
-  - `GET /api/v1/carbon/today?storeId=`: 당일 `CarbonSaving` 합산 + byItem + `carEquivalentKm = potentialSavingKg / carbon.car-kgco2-per-km`.
-  - `@WebMvcTest` 슬라이스 테스트는 **envelope 검증**(`$.success=true`, `$.data.items[0].itemId` 등).
+  - `GET /api/v1/carbon/today?storeId=` (§4.1): 당일 `CarbonSaving`(`findByStoreIdAndTargetDate`) 합산 + `byItem[]` + `carEquivalentKm = potentialSavingKg ÷ carbon.car-kgco2-per-km` + `wasteCostAvoidedKrw`(위 Interfaces의 ItemMaster 조인 산출). targetDate는 해당 store 최신 `CarbonSaving.target_date`.
+  - `GET /api/v1/carbon/savings?storeId=&from=&to=` (§4.2): `findByStoreIdAndTargetDateBetween` → 날짜별 그룹 합산 → `series[]{date, guaranteedSavingKg, potentialSavingKg}`(날짜 오름차순).
+  - `GET /api/v1/carbon/savings/summary?storeId=` (§4.3): 전체 기간 `CarbonSaving` 누적 → `{totalGuaranteedKg, totalPotentialKg, carEquivalentKm(=totalPotentialKg÷car-kgco2-per-km), periodDays(=distinct target_date 수)}`.
 - [ ] **Step 7: Commit** — `git commit -m "feat: feature builder, demand forecast, order optimization + carbon APIs (M2)"`
 
 ### Task 2.6: 실제 발주량 입력 API (`PUT /api/v1/recommendations/actual`)
 
 **Files:**
+
 - Create: `order/dto/{ActualOrderRequest,ActualOrderResult}.java`, `order/service/ActualOrderService.java`
 - Modify: `order/domain/OrderRecommendation.java`(actualQuantity/actualUpdatedAt setter), `order/repository/OrderRecommendationRepository.java`, `order/controller/RecommendationController.java`(PUT 핸들러)
 - Test: `src/test/java/com/netzero/order/ActualOrderServiceTest.java`
 
 **Interfaces:**
+
 - Consumes: `OrderRecommendationRepository`, `ItemMasterRepository`, `StoreRepository`.
 - Produces:
   - `record ActualOrderRequest(Long storeId, LocalDate targetDate, List<Item> items)`, `record Item(Long itemId, BigDecimal actualQuantity)`.
@@ -1164,10 +1217,12 @@ class OrderOptimizationServiceTest {
 ### Task 3.1: DueItemSelector (발주 도래 품목 선별)
 
 **Files:**
+
 - Create: `order/service/DueItemSelector.java`
 - Test: `src/test/java/com/netzero/order/DueItemSelectorTest.java`
 
 **Interfaces:**
+
 - Consumes: `OrderPolicyRepository`, `InventorySnapshotRepository`.
 - Produces:
   - `record DueItem(Long itemId, String itemName, int orderCycleDays, int leadTimeDays, LocalDate lastOrderDate, long daysSinceLastOrder)`.
@@ -1191,10 +1246,12 @@ class OrderOptimizationServiceTest {
 ### Task 3.2: 기상청 연동 (`KmaForecastPort` @HttpExchange + WeatherService) + avgTemp
 
 **Files:**
+
 - Create: `config/HttpClientConfig.java`, `weather/port/{KmaForecastPort,KmaForecastClient}.java`, `weather/domain/WeatherForecast.java`, `weather/repository/*`, `weather/service/WeatherService.java`, `weather/KmaWeatherProvider.java`, `weather/controller/WeatherController.java`
 - Test: `src/test/java/com/netzero/weather/WeatherServiceTest.java`, `src/test/java/com/netzero/weather/KmaWeatherProviderTest.java`
 
 **Interfaces:**
+
 - Consumes: `WeatherProvider`(Task 1.4 인터페이스), `SalesCsvService`(daily 보강 검증).
 - Produces:
   - `interface KmaForecastPort { KmaResponse getVillageForecast(Map<String,String> q); }` (`@GetExchange`).
@@ -1229,6 +1286,7 @@ class KmaWeatherProviderTest {
   }
 }
 ```
+
 > `KmaWeatherProvider`가 `@Primary` 빈이므로 SalesCsvService에 주입되어 daily 업로드 시 날씨가 채워진다. (`SalesRecord`에 `getWeather()/getAvgTemp()` getter 필요)
 
 - [ ] **Step 7: 실행 → FAIL → KmaWeatherProvider 구현 → PASS.**
@@ -1262,11 +1320,13 @@ public class KmaWeatherProvider implements WeatherProvider {
 > `FeatureBuilder`는 M2 Task 2.5에서 이미 생성됨(`isHoliday`=false 고정, `trend`=0.0 고정). 이 태스크는 **기존 파일을 수정**해 두 피처를 실값으로 채운다(새 파일 아님).
 
 **Files:**
+
 - Create: `feature/HolidayCalendar.java`
 - Modify: `feature/FeatureBuilder.java` (`isHoliday`·`trend` 실제 계산 주입)
 - Test: `src/test/java/com/netzero/feature/FeatureBuilderTest.java`
 
 **Interfaces:**
+
 - Consumes: `SalesRecordRepository`(기존), `HolidayCalendar`(신규).
 - Produces:
   - `HolidayCalendar.isHoliday(LocalDate): boolean` — 데모용 한국 공휴일 고정 집합(설/추석 근사 + 신정·삼일절·어린이날·광복절·개천절·한글날·성탄절) + 주말 옵션 제외(주말은 dayOfWeek로 이미 표현되므로 공휴일만 true).
@@ -1279,10 +1339,12 @@ public class KmaWeatherProvider implements WeatherProvider {
 ### Task 3.4: AiForecastClient (RestClient 실연동) — ForecastPort 교체
 
 **Files:**
+
 - Create: `forecast/port/AiForecastClient.java` (`@ConditionalOnProperty(name="ai.mode",havingValue="real")` 또는 기본), config에 RestClient(ai) 빈
 - Test: `src/test/java/com/netzero/forecast/AiForecastClientTest.java` (MockRestServiceServer)
 
 **Interfaces:**
+
 - Produces: `AiForecastClient implements ForecastPort` — `POST {ai.base-url}{ai.order-recommendation-path}` 호출, `ForecastRequest`(salesPresignedUrls 포함)→JSON, 응답 역직렬화. resilience4j retry/circuitbreaker, 실패 시 `ApiException(FORECAST_UNAVAILABLE)`.
 
 - [ ] **Step 1: 계약 테스트** — `MockRestServiceServer`로 `/v1/order-recommendation` 응답 픽스처(daily 8개) 제공 → `orderRecommendation(req)`가 itemId·daily 8개 역직렬화 검증. 요청 본문에 `salesHistory.presignedUrls`, `weather[].avgTemp` 포함 검증.
@@ -1292,14 +1354,16 @@ public class KmaWeatherProvider implements WeatherProvider {
 ### Task 3.5: S3 아카이빙 + Presign + 월말 스케줄러
 
 **Files:**
+
 - Create: `config/S3Config.java`, `export/service/{S3ArchiveService,PresignService}.java`, `export/scheduler/MonthlyExportScheduler.java`, ExportController에 `POST /export/archive`
 - Test: `src/test/java/com/netzero/export/PresignServiceTest.java`, `S3ArchiveServiceIT.java`(LocalStack 선택, 기본은 단위)
 
 **Interfaces:**
+
 - Produces: `S3ArchiveService.upload(String key, String csvBody): void`, `PresignService.presignGet(String key): String` (만료 `storage.s3.presign-expiry-seconds`). `MonthlyExportScheduler` `@Scheduled(cron)` → 말일에 `sales/store{id}/sales-{YYYY-MM}.csv`·`inventory/...` 업로드. `PresignService.recentSalesUrls(Long storeId, LocalDate ref, int months): List<String>`.
 
 - [ ] **Step 1: S3Config** (`S3Client`/`S3Presigner` 빈, endpoint override 지원: MinIO/LocalStack).
-- [ ] **Step 2: PresignService 단위 테스트** — 키 규칙 `sales/store1/sales-2026-05.csv` 생성·만료 적용(Presigner 목 or 실제 서명 형식 검증). 
+- [ ] **Step 2: PresignService 단위 테스트** — 키 규칙 `sales/store1/sales-2026-05.csv` 생성·만료 적용(Presigner 목 or 실제 서명 형식 검증).
 - [ ] **Step 3: 구현** → **Step 4: PASS.**
 - [ ] **Step 5: MonthlyExportScheduler + `POST /api/v1/export/archive?storeId=&month=` 수동 트리거.**
 - [ ] **Step 6: Commit** `git commit -m "feat: S3 archiving and presigned URLs (M3)"`.
@@ -1307,10 +1371,12 @@ public class KmaWeatherProvider implements WeatherProvider {
 ### Task 3.6: DailyPipelineService + `/pipeline/run` + `/forecast`(due) + `/dashboard/summary`
 
 **Files:**
+
 - Create: `pipeline/service/DailyPipelineService.java`, `pipeline/scheduler/PipelineScheduler.java`, `pipeline/controller/PipelineController.java`, `pipeline/dto/PipelineResult.java`, `forecast/controller/ForecastController.java`, `dashboard/service/DashboardService.java`, `dashboard/controller/DashboardController.java`
 - Test: `src/test/java/com/netzero/pipeline/DailyPipelineServiceTest.java`
 
 **Interfaces:**
+
 - Consumes: `DueItemSelector`, `WeatherService`, `PresignService`, `DemandForecastService`, `OrderOptimizationService`.
 - Produces: `DailyPipelineService.run(Long storeId, LocalDate targetDate): PipelineResult` — 순서 엄수: 0)`DueItemSelector.select` → due 품목 ID 추출 1)`WeatherService`로 커버기간(leadTime+orderCycle 최대치) 날씨 수집 2)`PresignService.recentSalesUrls`로 판매내역 presigned URL 수집 3)`DemandForecastService.forecast(storeId, targetDate, dueItemIds, weather, presignedUrls)` → DemandForecast 저장 4)`OrderOptimizationService.optimize(storeId, targetDate, dueItemIds)` → 저장된 예측 읽어 OrderRecommendation+CarbonSaving 저장. **forecast가 반드시 optimize보다 먼저** — optimize는 저장된 DemandForecast를 읽으므로 순서 역전 시 빈 결과. 멱등 upsert. `record PipelineResult(Long storeId, LocalDate targetDate, int dueItems, int forecasted, int recommended, int carbonComputed, String modelVersion, long elapsedMs)`. 중복 실행 가드(같은 store+date 진행중) → `PIPELINE_ALREADY_RUNNING`.
 
@@ -1326,10 +1392,12 @@ public class KmaWeatherProvider implements WeatherProvider {
 ### Task 4.1: LlmPort + RagContextAssembler + `/chat`
 
 **Files:**
+
 - Create: `chat/port/{LlmPort,AiLlmClient}.java`, `chat/service/{ChatService,RagContextAssembler}.java`, `chat/controller/ChatController.java`, `chat/dto/*`
 - Test: `src/test/java/com/netzero/chat/{RagContextAssemblerTest,AiLlmClientTest}.java`
 
 **Interfaces:**
+
 - Consumes: `OrderRecommendationRepository`, `CarbonSavingRepository`, `DemandForecastRepository`, `ItemMasterRepository`.
 - Produces:
   - `record Grounding(Map<String,Object> item, Map<String,Object> coverage, Map<String,Object> forecast, Map<String,Object> recommendation, Map<String,Object> carbon, Map<String,Object> context)`.
@@ -1347,10 +1415,12 @@ public class KmaWeatherProvider implements WeatherProvider {
 ### Task 4.2: 저전력 계측 메트릭 (Micrometer)
 
 **Files:**
+
 - Create: `metrics/ForecastMetrics.java`; chat/pipeline에 계측 주입
 - Test: `src/test/java/com/netzero/metrics/ForecastMetricsTest.java` (SimpleMeterRegistry)
 
 **Interfaces:**
+
 - Produces: `ForecastMetrics` with `recordLlmCall(int tokens, long latencyMs, boolean cacheHit)`, `recordPipeline(long ms)`, `recordWape(String itemCode, double wape)` → 메트릭 `zerowave.llm.calls/tokens/latency/cache.hit/miss`, `zerowave.pipeline.duration`, `zerowave.forecast.wape`.
 
 - [ ] **Step 1~4: TDD** — SimpleMeterRegistry로 카운터 증가 검증. ChatService에서 `recordLlmCall` 호출 배선.
@@ -1363,10 +1433,12 @@ public class KmaWeatherProvider implements WeatherProvider {
 ### Task 5.1: WAPE 산출 + 대시보드 노출
 
 **Files:**
+
 - Create: `forecast/service/WapeService.java`; DashboardService에 통합
 - Test: `src/test/java/com/netzero/forecast/WapeServiceTest.java`
 
 **Interfaces:**
+
 - Produces: `double wape(List<Double> actual, List<Double> predicted)` = `Σ|a−p|/Σa`. 품목별 집계 후 `ForecastMetrics.recordWape`.
 
 - [ ] **Step 1~4: TDD** — `wape([10,8],[9,9]) = (1+1)/18 = 0.111`. **Step 5: Commit** `git commit -m "feat: WAPE accuracy metric (M5)"`.
@@ -1374,11 +1446,13 @@ public class KmaWeatherProvider implements WeatherProvider {
 ### Task 5.2: 보안·OpenAPI·CORS 마감 + 데모 스모크
 
 **Files:**
+
 - Modify: `config/SecurityConfig.java` (M0의 permitAll → 쓰기 엔드포인트 API Key로 강화)
 - Create: `config/{WebConfig,OpenApiConfig,SchedulingConfig}.java`, `config/ApiKeyFilter.java`
 - Test: `src/test/java/com/netzero/smoke/DemoSmokeTest.java`
 
 **Interfaces:**
+
 - Produces: API Key(`X-API-Key`) 필터(쓰기 엔드포인트), CORS(프론트 오리진), `@EnableScheduling`, springdoc `/swagger-ui.html`. 스모크: ingest→pipeline(mock)→recommendations→carbon→export 전 과정 1테스트.
 
 - [ ] **Step 1: SecurityConfig 강화**(신규 생성 아님 — M0 Task 0.1의 permitAll 빈을 수정) — Demo: 조회는 허용, `/ingest/**`·`/pipeline/**`·`/export/archive`·`PUT /recommendations/actual` 는 `ApiKeyFilter`로 `X-API-Key`(config `security.api-key`) 검증. 키 불일치 시 envelope `{success:false,error:{code:"VALIDATION_ERROR",...}}` 401. 테스트는 `security.api-key`를 주입해 통과시킨다.
@@ -1398,6 +1472,7 @@ public class KmaWeatherProvider implements WeatherProvider {
 - **주의(실행자):** AI 응답이 `daily` 대신 `aggregate`인 경우 분기(ai_server_api_spec §3.4)는 Task 2.4/3.4 구현 시 `ItemForecast`에 `aggregate` optional 필드를 추가해 처리(테스트 1건 추가 권장).
 
 ### 흐름·정확성 재검토 반영(2026-06-26)
+
 - **B1 — JSON 컬럼:** RDS MySQL 8 / 테스트 H2 모두 네이티브 `JSON` 타입 지원. V1 스키마와 `DemandForecast.features`/`OrderRecommendation.rationale`는 `JSON`(`@JdbcTypeCode(SqlTypes.JSON)`, String 매핑)로 통일.
 - **B2 — 기본 보안 잠금:** `spring-boot-starter-security`가 모든 요청을 401로 막으므로 M0 Task 0.1에 permitAll `SecurityConfig` 선반영, M5 Task 5.2에서 동일 파일을 **수정**해 쓰기 엔드포인트 API Key 강화(신규 생성 아님).
 - **B3 — FeatureBuilder 위치:** M2 Task 2.5에서 생성(`isHoliday`=false·`trend`=0.0 고정), M3 Task 3.3은 **기존 파일 수정**으로 공휴일/추세 실값 주입. 반환 Map 키 불변.
