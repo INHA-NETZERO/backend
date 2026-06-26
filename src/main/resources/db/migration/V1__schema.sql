@@ -35,7 +35,7 @@ CREATE TABLE inventory_snapshot (
   item_id BIGINT NOT NULL REFERENCES item_master(id), category VARCHAR(12), unit VARCHAR(12),
   ordered_qty NUMERIC(12,3) DEFAULT 0, opening_stock NUMERIC(12,3), demand NUMERIC(12,3),
   actual_sales NUMERIC(12,3), stockout NUMERIC(12,3), waste_qty NUMERIC(12,3), closing_stock NUMERIC(12,3),
-  waste_kg NUMERIC(12,3), waste_carbon_kg NUMERIC(12,3), waste_cost_krw NUMERIC(14,2), last_order_date DATE,
+  waste_kg NUMERIC(12,3), waste_carbon_kg NUMERIC(14,4), waste_cost_krw NUMERIC(14,2), last_order_date DATE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (store_id, item_id, business_date));
 CREATE INDEX ix_inv_store_item_date ON inventory_snapshot(store_id, item_id, business_date);
