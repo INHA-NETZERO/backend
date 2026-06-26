@@ -66,7 +66,7 @@ public class DashboardService {
 
     @Transactional(readOnly = true)
     public DashboardSummary summary(Long storeId) {
-        LocalDate today = LocalDate.now(KST);
+        LocalDate today = LocalDate.now(KST).minusYears(1);
 
         // Latest target date with a recommendation
         LocalDate latestTargetDate = orderRecommendationRepository
