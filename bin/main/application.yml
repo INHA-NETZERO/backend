@@ -8,12 +8,9 @@ spring:
     hibernate.ddl-auto: validate
     open-in-view: false
     properties.hibernate.jdbc.time_zone: Asia/Seoul
-  flyway:
-    enabled: true
-    default-schema: zerowave
+  flyway.enabled: true
 external:
   kma:
-    enabled: false
     base-url: https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0
     service-key: ${KMA_SERVICE_KEY:}
 ai:
@@ -33,15 +30,3 @@ security:
 optimization: { default-cu: 1.0, default-co: 1.0 }
 carbon: { car-kgco2-per-km: 4.6 }
 management.endpoints.web.exposure.include: health,info,metrics,prometheus
-resilience4j:
-  circuitbreaker:
-    instances:
-      aiForecast:
-        slidingWindowSize: 5
-        failureRateThreshold: 50
-        waitDurationInOpenState: 10s
-  retry:
-    instances:
-      aiForecast:
-        maxAttempts: 3
-        waitDuration: 200ms

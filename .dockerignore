@@ -1,0 +1,13 @@
+.git
+.gradle
+build
+bin
+.classpath
+.project
+.settings
+.idea
+.vscode
+*.iml
+*.log
+*.class
+.env
