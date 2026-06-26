@@ -6,6 +6,7 @@ import com.netzero.common.error.ApiException;
 import com.netzero.common.error.ErrorCode;
 import com.netzero.forecast.dto.ForecastResponse;
 import com.netzero.forecast.service.DemandForecastService;
+import com.netzero.metrics.ForecastMetrics;
 import com.netzero.order.domain.OrderRecommendation;
 import com.netzero.order.service.DueItemSelector;
 import com.netzero.order.service.OrderOptimizationService;
@@ -37,6 +38,7 @@ public class DailyPipelineService {
     private final DemandForecastService demandForecastService;
     private final OrderOptimizationService orderOptimizationService;
     private final CarbonSavingRepository carbonSavingRepository;
+    private final ForecastMetrics metrics;
 
     @Autowired(required = false)
     private WeatherService weatherService;
@@ -50,13 +52,15 @@ public class DailyPipelineService {
             PresignService presignService,
             DemandForecastService demandForecastService,
             OrderOptimizationService orderOptimizationService,
-            CarbonSavingRepository carbonSavingRepository) {
+            CarbonSavingRepository carbonSavingRepository,
+            ForecastMetrics metrics) {
 
         this.dueItemSelector = new DueItemSelector(orderPolicyRepository, inventorySnapshotRepository);
         this.presignService = presignService;
         this.demandForecastService = demandForecastService;
         this.orderOptimizationService = orderOptimizationService;
         this.carbonSavingRepository = carbonSavingRepository;
+        this.metrics = metrics;
     }
 
     /**
@@ -87,8 +91,9 @@ public class DailyPipelineService {
             log.info("Pipeline storeId={} date={}: {} due item(s)", storeId, targetDate, dueItemIds.size());
 
             if (dueItemIds.isEmpty()) {
-                return new PipelineResult(storeId, targetDate, 0, 0, 0, 0, null,
-                        System.currentTimeMillis() - startMs);
+                long elapsedMs = System.currentTimeMillis() - startMs;
+                metrics.recordPipeline(elapsedMs);
+                return new PipelineResult(storeId, targetDate, 0, 0, 0, 0, null, elapsedMs);
             }
 
             // Step 2 — weather (optional; skipped when KMA is disabled)
@@ -119,6 +124,7 @@ public class DailyPipelineService {
                     storeId, targetDate,
                     forecastResponse.predictions().size(), recs.size(), carbons.size(), elapsedMs);
 
+            metrics.recordPipeline(elapsedMs);
             return new PipelineResult(
                     storeId, targetDate,
                     dueItemIds.size(),
