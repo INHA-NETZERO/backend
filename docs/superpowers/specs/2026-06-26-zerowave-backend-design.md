@@ -78,7 +78,7 @@ com.netzero.<domain>
 | 도메인       | port | 포트 내용                                                       |
 | ------------ | ---- | --------------------------------------------------------------- |
 | store        | —    | Store, **ItemMaster**, **OrderPolicy** 마스터                   |
-| ingest       | —    | 판매/재고 CSV → SalesRecord/InventorySnapshot                   |
+| ingest       | —    | 판매/재고 CSV → SalesRecord/InventorySnapshot. 하루치 업로드는 `WeatherProvider`(KMA)로 날씨 보강 |
 | **export**   | —    | sales/store-inventory CSV 월단위 추출 + **월말 S3 아카이빙·presigned URL**(AI에 판매CSV 전달) |
 | **weather**  | ✅   | `KmaForecastPort` + `KmaForecastClient`(@HttpExchange) — 기상청 |
 | feature      | —    | `FeatureBuilder`(DB → 피처벡터), `HolidayCalendar`              |

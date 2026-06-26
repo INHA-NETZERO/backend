@@ -103,7 +103,8 @@ CSV 예:
 2026-06-28,일,우유,원재료,11
 2026-06-28,일,베이커리,완제품,23
 ```
-> 날씨/기온/강수 컬럼은 받지 않는다. 해당 날짜 `WeatherForecast`(또는 actual)에서 백필하며, 없으면 null. `eventFlag/newMenuFlag`는 `SalesRecord.event/newMenu`에 마커(`"Y"`/null)로 저장, `scenarioNote`는 `SalesRecord.scenarioNote`에 저장. 적용 날짜는 CSV `날짜`(보통 단일일).
+> **날씨 자동 보강:** CSV엔 날씨 컬럼이 없고, 업로드 시 **백엔드가 기상청 API로 해당 날짜 날씨를 조회**해 `SalesRecord.weather/avgTemp/precipitationMm`를 채우고 `WeatherForecast`에도 저장한다. 매핑: `precipitationMm>0 → 비`, `else skyCode≥3 → 흐림`, `else 맑음`. 기상청 조회 실패 시 날씨 필드는 null(업로드는 성공).
+> `eventFlag/newMenuFlag`는 `SalesRecord.event/newMenu`에 마커(`"Y"`/null)로, `scenarioNote`는 `SalesRecord.scenarioNote`에 저장. 적용 날짜는 CSV `날짜`(보통 단일일).
 
 **Response 200**
 ```json

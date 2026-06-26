@@ -418,7 +418,9 @@ data: { "accepted": 360, "rejected": 2, "errors":[{"line":15,"code":"ITEM_NOT_FO
 ```
 **`POST /api/v1/ingest/sales/daily`** — multipart `file`(CSV), `storeId`, body `eventFlag`,`newMenuFlag`,`scenarioNote` (하루치)
 ```
-CSV 헤더: 날짜,요일,품목,구분,판매수량        (날씨 컬럼 없음 → WeatherForecast 백필 또는 null)
+CSV 헤더: 날짜,요일,품목,구분,판매수량        (날씨 컬럼 없음)
+날씨 자동 보강: 업로드 시 기상청 API로 해당 날짜 날씨 조회 → SalesRecord.weather/avgTemp/precipitationMm 채우고
+               WeatherForecast 저장. 매핑: precipitationMm>0→비, else skyCode≥3→흐림, else 맑음. 조회 실패 시 null.
 body 메타(그날 전체 적용): eventFlag(bool), newMenuFlag(bool), scenarioNote(str, 예 "주말+맑음->수요 높음")
 저장: eventFlag/newMenuFlag → SalesRecord.event/newMenu 마커("Y"/null), scenarioNote → SalesRecord.scenarioNote
 data: { "appliedDate":"2026-06-28","accepted":2,"rejected":0,"eventFlag":false,"newMenuFlag":true,"errors":[] }

@@ -563,18 +563,48 @@ class GlobalExceptionHandlerTest {
 **Files:**
 - Create: `store/domain/SalesRecord.java`, `store/repository/SalesRecordRepository.java`
 - Create: `ingest/CsvParser.java`, `ingest/service/SalesCsvService.java`, `ingest/dto/{IngestResult,DailyIngestResult}.java`, `ingest/controller/IngestController.java`
+- Create: `weather/WeatherProvider.java`, `weather/NoOpWeatherProvider.java`, `weather/dto/DailyWeather.java`
 - Test: `src/test/java/com/netzero/ingest/SalesCsvServiceTest.java`
 
 **Interfaces:**
-- Consumes: `ItemMasterRepository.findByName`.
+- Consumes: `ItemMasterRepository.findByName`, `WeatherProvider`.
 - Produces:
   - `record IngestResult(int accepted, int rejected, List<RowError> errors)`, `record RowError(int line, String code, String value)`.
   - `record DailyIngestResult(LocalDate appliedDate, int accepted, int rejected, boolean eventFlag, boolean newMenuFlag, List<RowError> errors)`.
+  - `record DailyWeather(String weather, BigDecimal avgTemp, BigDecimal precipitationMm)`.
+  - `interface WeatherProvider { Optional<DailyWeather> lookup(Long storeId, LocalDate date); }` — 기상청 날씨 조회 시임. M1엔 `NoOpWeatherProvider`(항상 `Optional.empty()`, `@ConditionalOnMissingBean` 기본 빈). M3에서 `KmaWeatherProvider`가 실연동(Task 3.2).
   - `SalesCsvService.ingest(Long storeId, InputStream csv): IngestResult` — 풀컬럼 CSV(헤더 `날짜,요일,날씨,기온,강수mm,행사,신메뉴,품목,구분,판매수량,비고_시나리오`).
-  - `SalesCsvService.ingestDaily(Long storeId, InputStream csv, boolean eventFlag, boolean newMenuFlag, String scenarioNote): DailyIngestResult` — 하루치 CSV(헤더 `날짜,요일,품목,구분,판매수량`), body 메타를 모든 행에 적용. event/newMenu는 `"Y"`/null 마커로 저장, 날씨/기온/강수는 null.
+  - `SalesCsvService.ingestDaily(Long storeId, InputStream csv, boolean eventFlag, boolean newMenuFlag, String scenarioNote): DailyIngestResult` — 하루치 CSV(헤더 `날짜,요일,품목,구분,판매수량`), body 메타를 모든 행에 적용. event/newMenu는 `"Y"`/null 마커로 저장. **날씨는 `WeatherProvider.lookup(storeId,날짜)`로 보강**(M1 NoOp이면 null, M3 KMA면 채움).
   - 컨트롤러는 `ApiResponse<IngestResult>` / `ApiResponse<DailyIngestResult>` 반환.
 
-- [ ] **Step 1: SalesRecord 엔티티 + repo 작성** (V1 컬럼 매핑, `getQuantitySold():BigDecimal`, `getBusinessDate():LocalDate`, `getItemId():Long`). Repo: `List<SalesRecord> findByStoreIdAndBusinessDateBetween(Long, LocalDate, LocalDate)`.
+- [ ] **Step 1: SalesRecord 엔티티 + repo + WeatherProvider 시임 작성** (SalesRecord: V1 컬럼 매핑, `getQuantitySold():BigDecimal`, `getBusinessDate():LocalDate`, `getItemId():Long`; repo: `List<SalesRecord> findByStoreIdAndBusinessDateBetween(Long, LocalDate, LocalDate)`).
+
+```java
+// weather/dto/DailyWeather.java
+package com.netzero.weather.dto;
+import java.math.BigDecimal;
+public record DailyWeather(String weather, BigDecimal avgTemp, BigDecimal precipitationMm) {}
+```
+```java
+// weather/WeatherProvider.java
+package com.netzero.weather;
+import com.netzero.weather.dto.DailyWeather;
+import java.time.LocalDate; import java.util.Optional;
+public interface WeatherProvider { Optional<DailyWeather> lookup(Long storeId, LocalDate date); }
+```
+```java
+// weather/NoOpWeatherProvider.java — M1 기본 빈(KMA 미연동 시)
+package com.netzero.weather;
+import com.netzero.weather.dto.DailyWeather;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.context.annotation.*;
+import java.time.LocalDate; import java.util.Optional;
+@Configuration
+class NoOpWeatherProvider {
+  @Bean @ConditionalOnMissingBean(WeatherProvider.class)
+  WeatherProvider noOpWeatherProvider() { return (storeId, date) -> Optional.empty(); }
+}
+```
 
 - [ ] **Step 2: 실패 테스트 작성**
 
@@ -643,7 +673,10 @@ import java.io.InputStream; import java.math.BigDecimal; import java.time.LocalD
 @Service
 public class SalesCsvService {
   private final ItemMasterRepository items; private final SalesRecordRepository sales;
-  public SalesCsvService(ItemMasterRepository i, SalesRecordRepository s){this.items=i;this.sales=s;}
+  private final com.netzero.weather.WeatherProvider weather;
+  public SalesCsvService(ItemMasterRepository i, SalesRecordRepository s, com.netzero.weather.WeatherProvider w){
+    this.items=i; this.sales=s; this.weather=w;
+  }
   @Transactional
   public IngestResult ingest(Long storeId, InputStream csv) {
     var rows = CsvParser.parse(csv); int accepted=0; var errors=new ArrayList<IngestResult.RowError>();
@@ -664,12 +697,16 @@ public class SalesCsvService {
     var rows = CsvParser.parse(csv); int accepted=0; var errors=new ArrayList<IngestResult.RowError>();
     LocalDate applied=null; int line=1;
     String eventMark = eventFlag? "Y" : null, newMenuMark = newMenuFlag? "Y" : null;
+    var weatherCache = new java.util.HashMap<LocalDate, com.netzero.weather.dto.DailyWeather>();
     for (var r : rows) { line++;
       var item = items.findByName(r.get("품목")).orElse(null);
       if (item == null) { errors.add(new IngestResult.RowError(line,"ITEM_NOT_FOUND", r.get("품목"))); continue; }
       LocalDate d = LocalDate.parse(r.get("날짜")); applied = d;
-      // 날씨/기온/강수는 null(WeatherForecast 백필은 파이프라인 단계)
-      var rec = new SalesRecord(storeId, d, r.get("요일"), null, null, null,
+      // 기상청 날씨 보강(날짜당 1회 조회, 실패/미연동 시 null)
+      var w = weatherCache.computeIfAbsent(d, dd -> weather.lookup(storeId, dd).orElse(null));
+      String wx = w!=null? w.weather() : null;
+      BigDecimal temp = w!=null? w.avgTemp() : null, precip = w!=null? w.precipitationMm() : null;
+      var rec = new SalesRecord(storeId, d, r.get("요일"), wx, temp, precip,
         eventMark, newMenuMark, item.getCategory().name(), item.getId(),
         bd(r.get("판매수량")), nz(scenarioNote));
       sales.save(rec); accepted++;
@@ -1012,17 +1049,72 @@ class OrderOptimizationServiceTest {
 ### Task 3.2: 기상청 연동 (`KmaForecastPort` @HttpExchange + WeatherService) + avgTemp
 
 **Files:**
-- Create: `config/HttpClientConfig.java`, `weather/port/{KmaForecastPort,KmaForecastClient}.java`, `weather/domain/WeatherForecast.java`, `weather/repository/*`, `weather/service/WeatherService.java`, `weather/controller/WeatherController.java`
-- Test: `src/test/java/com/netzero/weather/WeatherServiceTest.java` (KmaForecastPort 목)
+- Create: `config/HttpClientConfig.java`, `weather/port/{KmaForecastPort,KmaForecastClient}.java`, `weather/domain/WeatherForecast.java`, `weather/repository/*`, `weather/service/WeatherService.java`, `weather/KmaWeatherProvider.java`, `weather/controller/WeatherController.java`
+- Test: `src/test/java/com/netzero/weather/WeatherServiceTest.java`, `src/test/java/com/netzero/weather/KmaWeatherProviderTest.java`
 
 **Interfaces:**
-- Produces: `interface KmaForecastPort { KmaResponse getVillageForecast(Map<String,String> q); }` (`@GetExchange`). `WeatherService.fetchAndStore(Long storeId, LocalDate date): WeatherSnapshot` — KMA 호출→파싱→`avgTemp=(tempMax+tempMin)/2`→WeatherForecast 저장→WeatherSnapshot 반환. `WeatherService.coverageWeather(Long storeId, LocalDate start, int days): List<WeatherSnapshot>`.
+- Consumes: `WeatherProvider`(Task 1.4 인터페이스), `SalesCsvService`(daily 보강 검증).
+- Produces:
+  - `interface KmaForecastPort { KmaResponse getVillageForecast(Map<String,String> q); }` (`@GetExchange`).
+  - `WeatherService.fetchAndStore(Long storeId, LocalDate date): WeatherSnapshot` — KMA 호출→파싱→`avgTemp=(tempMax+tempMin)/2`→WeatherForecast 저장→WeatherSnapshot 반환. `WeatherService.coverageWeather(Long storeId, LocalDate start, int days): List<WeatherSnapshot>`.
+  - `KmaWeatherProvider implements WeatherProvider` (`@Primary`) — `fetchAndStore` 결과를 `DailyWeather`로 매핑. 날씨 enum 규칙: `precipitationMm>0 → "비"`, `else skyCode≥3 → "흐림"`, `else "맑음"`. KMA 실패 시 `Optional.empty()`(업로드는 성공). 이 빈이 존재하면 `NoOpWeatherProvider`(@ConditionalOnMissingBean)는 비활성 → **하루치 업로드가 자동으로 기상청 날씨로 채워진다.**
 
 - [ ] **Step 1: HttpClientConfig (RestClient + HttpServiceProxyFactory) 작성** (backend_spec §2.4 코드).
 - [ ] **Step 2: WeatherService 테스트** — KmaForecastPort 목이 tempMax=24, tempMin=18 반환 → `fetchAndStore` 결과 `avgTemp=21.0`, WeatherForecast 저장 확인.
-- [ ] **Step 3: 실행 → FAIL** → **Step 4: 구현** (KMA 응답 파싱은 Demo 단순화: TMX/TMN/POP/PCP/SKY 추출) → **Step 5: PASS.**
-- [ ] **Step 6: WeatherController** `POST /api/v1/weather/refresh` 추가.
-- [ ] **Step 7: Commit** `git commit -m "feat: KMA weather client with avgTemp (M3)"`.
+- [ ] **Step 3: 실행 → FAIL** → **Step 4: WeatherService 구현** (KMA 응답 파싱은 Demo 단순화: TMX/TMN/POP/PCP/SKY 추출) → **Step 5: PASS.**
+- [ ] **Step 6: KmaWeatherProvider + 날씨 매핑 테스트 작성**
+
+```java
+// test/.../weather/KmaWeatherProviderTest.java
+@org.springframework.boot.test.context.SpringBootTest @org.springframework.transaction.annotation.Transactional
+class KmaWeatherProviderTest {
+  @org.springframework.boot.test.mock.mockito.MockBean com.netzero.weather.service.WeatherService weatherService;
+  @org.springframework.beans.factory.annotation.Autowired com.netzero.ingest.service.SalesCsvService sales;
+  @org.springframework.beans.factory.annotation.Autowired com.netzero.store.repository.SalesRecordRepository repo;
+  @org.junit.jupiter.api.Test void dailyUploadEnrichesWeatherFromKma() {
+    // given: 기상청 결과(강수 0, 흐림 skyCode=4) → "흐림", avgTemp 21.0
+    org.mockito.Mockito.when(weatherService.fetchAndStore(org.mockito.ArgumentMatchers.eq(1L),
+        org.mockito.ArgumentMatchers.eq(java.time.LocalDate.parse("2026-06-28"))))
+      .thenReturn(new com.netzero.weather.dto.WeatherSnapshot(
+        java.time.LocalDate.parse("2026-06-28"), new java.math.BigDecimal("21.0"),
+        java.math.BigDecimal.ZERO, 10, 4));
+    String csv = "날짜,요일,품목,구분,판매수량\n2026-06-28,일,우유,원재료,11\n";
+    sales.ingestDaily(1L, new java.io.ByteArrayInputStream(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+        false, false, null);
+    var rec = repo.findByStoreIdAndBusinessDateBetween(1L,
+        java.time.LocalDate.parse("2026-06-28"), java.time.LocalDate.parse("2026-06-28")).get(0);
+    org.assertj.core.api.Assertions.assertThat(rec.getWeather()).isEqualTo("흐림");
+    org.assertj.core.api.Assertions.assertThat(rec.getAvgTemp()).isEqualByComparingTo("21.0");
+  }
+}
+```
+> `KmaWeatherProvider`가 `@Primary` 빈이므로 SalesCsvService에 주입되어 daily 업로드 시 날씨가 채워진다. (`SalesRecord`에 `getWeather()/getAvgTemp()` getter 필요)
+
+- [ ] **Step 7: 실행 → FAIL → KmaWeatherProvider 구현 → PASS.**
+
+```java
+// weather/KmaWeatherProvider.java
+package com.netzero.weather;
+import com.netzero.weather.dto.DailyWeather; import com.netzero.weather.service.WeatherService;
+import org.springframework.context.annotation.Primary; import org.springframework.stereotype.Component;
+import java.math.BigDecimal; import java.time.LocalDate; import java.util.Optional;
+@Component @Primary
+public class KmaWeatherProvider implements WeatherProvider {
+  private final WeatherService weather;
+  public KmaWeatherProvider(WeatherService w){ this.weather=w; }
+  @Override public Optional<DailyWeather> lookup(Long storeId, LocalDate date) {
+    try {
+      var s = weather.fetchAndStore(storeId, date);
+      String wx = (s.precipitationMm()!=null && s.precipitationMm().signum()>0) ? "비"
+                : (s.skyCode()!=null && s.skyCode()>=3) ? "흐림" : "맑음";
+      return Optional.of(new DailyWeather(wx, s.avgTemp(), s.precipitationMm()));
+    } catch (Exception e) { return Optional.empty(); } // 실패 시 업로드는 성공, 날씨 null
+  }
+}
+```
+
+- [ ] **Step 8: WeatherController** `POST /api/v1/weather/refresh` 추가(`ApiResponse.ok(snapshot)`).
+- [ ] **Step 9: Commit** `git commit -m "feat: KMA weather client + daily upload weather enrichment (M3)"`.
 
 ### Task 3.3: FeatureBuilder
 
