@@ -11,6 +11,7 @@ spring:
   flyway.enabled: true
 external:
   kma:
+    enabled: false
     base-url: https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0
     service-key: ${KMA_SERVICE_KEY:}
 ai:
