@@ -37,9 +37,11 @@ public class InventoryCsvService {
                 errors.add(new IngestResult.RowError(line, "ITEM_NOT_FOUND", r.get("품목")));
                 continue;
             }
-            var snap = new InventorySnapshot();
+            var businessDate = LocalDate.parse(r.get("날짜"));
+            var snap = repo.findByStoreIdAndItem_IdAndBusinessDate(storeId, item.getId(), businessDate)
+                .orElseGet(InventorySnapshot::new);
             snap.setStoreId(storeId);
-            snap.setBusinessDate(LocalDate.parse(r.get("날짜")));
+            snap.setBusinessDate(businessDate);
             snap.setDayOfWeek(r.get("요일"));
             snap.setItem(item);
             snap.setCategory(r.get("구분"));
