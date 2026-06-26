@@ -324,7 +324,8 @@ POS CSV ─┐
 
 **커버기간 개념(발주주기·리드타임):** 지금 발주하면 **리드타임** 뒤 입고되어 **다음 발주분이 들어올 때까지(=발주주기)** 버텨야 한다. 따라서 충당해야 할 수요 = **리드타임+발주주기 일수**의 합. `OrderPolicy.leadTimeDays`, `OrderPolicy.orderCycleDays`를 예측 요청에 함께 전달해 AI가 그 기간만큼 일별 예측을 반환하면, 백엔드가 **합산**해 발주량을 구한다.
 
-**예측 서비스 계약** — `POST {ai.base-url}/v1/forecast` (날씨·커버기간은 store·date 공통이라 top-level 분리):
+**예측 서비스 계약** — `POST {ai.base-url}/v1/order-recommendation` (발주용 커버기간 예측; 날씨·커버기간은 store·date 공통이라 top-level 분리):
+> 발주와 무관한 단순 익일 수요는 별도 엔드포인트 `POST {ai.base-url}/v1/forecast`(단일일 분위)를 사용한다. 상세는 [`ai_server_api_spec.md`](./ai_server_api_spec.md) §3·§4.
 ```
 Req:  { "storeId":1, "targetDate":"2026-06-27",
         "coverage":{ "leadTimeDays":1, "orderCycleDays":7, "coverageDays":8 },
@@ -535,7 +536,8 @@ external:
     service-key: ${KMA_SERVICE_KEY:}
 ai:                                      # Python AI 서버 (수요예측 + sLLM, 별도 레포)
   base-url: ${AI_SERVER_URL:http://localhost:8000}
-  forecast-path: /v1/forecast
+  order-recommendation-path: /v1/order-recommendation   # 발주용 커버기간 예측
+  forecast-path: /v1/forecast                           # 익일 단일 수요예측
   generate-path: /v1/generate
 
 optimization:
@@ -649,7 +651,7 @@ com.netzero
 | 비용 | `Cu = 1800−1000 = 800`, `Co = 1000+폐기처리비100 = 1100` |
 | 현재고 | 최신 기말재고 = 12 L |
 
-**C.1 예측 요청** — `POST {ai.base-url}/v1/forecast`
+**C.1 예측 요청** — `POST {ai.base-url}/v1/order-recommendation`
 ```json
 { "storeId":1, "targetDate":"2026-06-27",
   "coverage":{ "leadTimeDays":1, "orderCycleDays":7, "coverageDays":8 },

@@ -140,9 +140,10 @@ Spring → 프론트: { answer, groundedOn:{ids}, cacheHit, llmLatencyMs, tokens
 
 ## 5. AI 서버 계약 (AI 레포가 구현)
 
-### 5.1 수요예측 — `POST {ai.base-url}/v1/forecast`
+### 5.1 발주용 수요예측 — `POST {ai.base-url}/v1/order-recommendation`
 
 발주주기·리드타임을 함께 전달해 **커버기간(리드타임+발주주기) 일별 예측**을 받는다. 발주주기 7일이면 7일치(+리드타임)를 합산해 발주량을 산출.
+> 발주와 무관한 단순 익일 수요 표시는 별도 엔드포인트 `POST {ai.base-url}/v1/forecast`(단일일 분위)를 사용한다. 상세는 [`ai_server_api_spec.md`](../../ai_server_api_spec.md).
 ```json
 Req: {
   "storeId": 1, "targetDate": "2026-06-27",
@@ -277,6 +278,6 @@ Res: { "answer":"...", "cacheHit":true, "latencyMs":180, "tokens":142 }
 
 ## 부록 — 미해결/AI 레포 합의 필요
 
-- AI 서버 `/v1/forecast`·`/v1/generate` 계약(§5)을 AI 레포와 확정.
+- AI 서버 `/v1/order-recommendation`(발주용 커버기간)·`/v1/forecast`(익일 단일)·`/v1/generate` 계약(§5, ai_server_api_spec.md)을 AI 레포와 확정.
 - `grounding` 번들 스키마 상세(§4.2) — sLLM 프롬프트 설계와 함께 합의.
 - `baseline_v1` 폴백 산식(ma7 기반)을 AI 레포가 구현.
