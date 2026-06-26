@@ -1,14 +1,18 @@
 package com.netzero.metrics;
 
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Tags;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Component
 public class ForecastMetrics {
     private final MeterRegistry registry;
+    private final Map<String, AtomicReference<Double>> wapeGauges = new ConcurrentHashMap<>();
 
     public ForecastMetrics(MeterRegistry registry) {
         this.registry = registry;
@@ -30,7 +34,13 @@ public class ForecastMetrics {
     }
 
     public void recordWape(String itemCode, double wape) {
-        registry.gauge("zerowave.forecast.wape",
-            Tags.of("item", itemCode), wape);
+        wapeGauges.computeIfAbsent(itemCode, code -> {
+            AtomicReference<Double> holder = new AtomicReference<>(0.0);
+            Gauge.builder("zerowave.forecast.wape", holder, AtomicReference::get)
+                 .tag("item", code)
+                 .strongReference(true)
+                 .register(registry);
+            return holder;
+        }).set(wape);
     }
 }

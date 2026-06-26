@@ -1,6 +1,7 @@
 package com.netzero.metrics;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,5 +39,20 @@ class ForecastMetricsTest {
         metrics.recordPipeline(500L);
 
         assertThat(registry.timer("zerowave.pipeline.duration").count()).isEqualTo(1L);
+    }
+
+    @Test
+    void recordWape_gaugeReflectsLatestValue() {
+        var registry = new SimpleMeterRegistry();
+        var metrics = new ForecastMetrics(registry);
+
+        metrics.recordWape("우유", 0.15);
+        metrics.recordWape("우유", 0.20);  // update must be reflected
+
+        double value = registry.get("zerowave.forecast.wape")
+                               .tag("item", "우유")
+                               .gauge()
+                               .value();
+        assertThat(value).isCloseTo(0.20, Offset.offset(0.001));
     }
 }
