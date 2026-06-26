@@ -41,4 +41,12 @@ public class HttpClientConfig {
                 .baseUrl(aiBaseUrl)
                 .build();
     }
+
+    @Bean
+    public RestClient aiGenerateRestClient(
+            @Value("${ai.base-url:http://localhost:8000}") String baseUrl) {
+        return RestClient.builder()
+                .baseUrl(baseUrl)
+                .build();
+    }
 }
