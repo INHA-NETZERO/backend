@@ -25,7 +25,11 @@ public class ItemQueryService {
         if (Boolean.TRUE.equals(wasteTargetOnly)) {
             items = repo.findByWasteTargetTrue();
         } else if (category != null) {
-            items = repo.findByCategory(ItemCategory.valueOf(category));
+            try {
+                items = repo.findByCategory(ItemCategory.valueOf(category));
+            } catch (IllegalArgumentException e) {
+                throw new ApiException(ErrorCode.VALIDATION_ERROR, "Unknown category: " + category);
+            }
         } else {
             items = repo.findAll();
         }

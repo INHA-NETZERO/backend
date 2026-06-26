@@ -53,4 +53,15 @@ class ItemControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("ITEM_NOT_FOUND"));
     }
+
+    @Test
+    void listItems_invalidCategory_returns400WithValidationError() throws Exception {
+        when(itemQueryService.findAll(any(), any()))
+                .thenThrow(new ApiException(ErrorCode.VALIDATION_ERROR, "Unknown category: INVALID"));
+
+        mockMvc.perform(get("/api/v1/items?category=INVALID"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+    }
 }
