@@ -2,7 +2,9 @@ package com.netzero.export;
 
 import com.netzero.config.SecurityConfig;
 import com.netzero.export.controller.ExportController;
+import com.netzero.export.scheduler.MonthlyExportScheduler;
 import com.netzero.export.service.InventoryFlowExporter;
+import com.netzero.export.service.PresignService;
 import com.netzero.export.service.SalesCsvExporter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +30,12 @@ class ExportControllerTest {
 
     @MockitoBean
     InventoryFlowExporter inventoryFlowExporter;
+
+    @MockitoBean
+    MonthlyExportScheduler monthlyExportScheduler;
+
+    @MockitoBean
+    PresignService presignService;
 
     @Test
     void salesCsvEndpoint_returns200WithCsvContentType() throws Exception {
