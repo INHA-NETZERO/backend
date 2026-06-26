@@ -27,6 +27,7 @@
 
 ```
 build.gradle                                  (수정) 의존성·플러그인 버전
+.env.example                                  (생성) 민감 환경변수 템플릿(.env는 gitignore)
 src/main/resources/application.yml            (생성) 설정(§6 backend_spec)
 src/main/resources/db/migration/
   V1__schema.sql                              (생성) 전체 DDL
@@ -60,13 +61,13 @@ src/test/java/com/netzero/...                 (각 도메인 테스트)
 ### Task 0.1: 의존성·설정 갱신과 부팅 확인
 
 **Files:**
-- Modify: `build.gradle`
-- Create: `src/main/resources/application.yml`
+- Modify: `build.gradle`, `.gitignore`
+- Create: `src/main/resources/application.yml`, `src/test/resources/application.yml`, `.env.example`
 - Delete: `src/main/resources/application.properties` (yml로 대체)
 - Test: `src/test/java/com/netzero/NetzeroApplicationTests.java` (기존)
 
 **Interfaces:**
-- Produces: 부팅 가능한 Spring Boot 3.5.13 앱(웹·JPA·validation·actuator·flyway·s3 의존성 포함).
+- Produces: 부팅 가능한 Spring Boot 3.5.13 앱(웹·JPA·validation·actuator·flyway·s3·spring-dotenv 의존성 포함). `.env`로 민감정보 주입(`.env.example` 템플릿 제공).
 
 - [ ] **Step 1: build.gradle 교체**
 
@@ -92,6 +93,7 @@ dependencies {
     implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.2.0'
     implementation platform('software.amazon.awssdk:bom:2.31.0')
     implementation 'software.amazon.awssdk:s3'
+    implementation 'me.paulschwarz:spring-dotenv:4.0.0'   // .env → ${VAR} 자동 주입
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
     testImplementation 'com.h2database:h2'
@@ -114,6 +116,10 @@ spring:
     open-in-view: false
     properties.hibernate.jdbc.time_zone: Asia/Seoul
   flyway.enabled: true
+external:
+  kma:
+    base-url: https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0
+    service-key: ${KMA_SERVICE_KEY:}
 ai:
   base-url: ${AI_SERVER_URL:http://localhost:8000}
   order-recommendation-path: /v1/order-recommendation
@@ -126,10 +132,14 @@ storage:
     region: ${AWS_REGION:ap-northeast-2}
     endpoint: ${S3_ENDPOINT:}
     presign-expiry-seconds: 600
+security:
+  api-key: ${SECURITY_API_KEY:dev-demo-key}
 optimization: { default-cu: 1.0, default-co: 1.0 }
 carbon: { car-kgco2-per-km: 4.6 }
 management.endpoints.web.exposure.include: health,info,metrics,prometheus
 ```
+
+> AWS 자격증명(`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`)은 application.yml에 두지 않고 AWS SDK 기본 체인(환경변수/.env)으로 주입한다.
 
 For tests, add `src/test/resources/application.yml` overriding datasource to H2 and `spring.jpa.hibernate.ddl-auto: validate` with Flyway on H2 (`spring.flyway.url` inherits). Use H2 Postgres mode:
 ```yaml
@@ -141,23 +151,56 @@ spring:
   jpa.database-platform: org.hibernate.dialect.H2Dialect
 ```
 
-- [ ] **Step 3: application.properties 삭제**
+- [ ] **Step 3: `.env.example` 작성 + `.gitignore`에 `.env` 추가**
+
+민감정보는 `.env`로 관리하고 커밋하지 않는다. `.env.example`은 키 목록만 담은 템플릿(값은 더미)으로 커밋한다. `spring-dotenv`가 부팅 시 `.env`를 읽어 application.yml의 `${VAR}`로 주입한다(실행 전 `cp .env.example .env` 후 값 채움).
+
+`.env.example` (프로젝트 루트, 커밋함):
+```dotenv
+# === Database (PostgreSQL) ===
+DB_URL=jdbc:postgresql://localhost:5432/zerowave
+DB_USER=zerowave
+DB_PASSWORD=change-me
+
+# === Python AI 서버 (수요예측 + sLLM) ===
+AI_SERVER_URL=http://localhost:8000
+
+# === 기상청 단기예보 API ===
+KMA_SERVICE_KEY=your-data-go-kr-service-key
+
+# === AWS S3 (월말 아카이빙 + presigned URL) ===
+S3_BUCKET=zerowave
+AWS_REGION=ap-northeast-2
+S3_ENDPOINT=                      # MinIO/LocalStack 사용 시 예: http://localhost:9000 (실 S3는 비움)
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+
+# === API 보안 ===
+SECURITY_API_KEY=dev-demo-key     # 쓰기 엔드포인트 X-API-Key
+```
+
+`.gitignore`에 다음 줄 추가(이미 있으면 생략):
+```gitignore
+.env
+```
+
+- [ ] **Step 4: application.properties 삭제**
 
 Run: `git rm src/main/resources/application.properties`
 
-- [ ] **Step 4: 빌드/부팅 테스트 실행**
+- [ ] **Step 5: 빌드/부팅 테스트 실행**
 
 Run: `./gradlew test`
-Expected: PASS (`NetzeroApplicationTests.contextLoads` 통과). 컨텍스트 로드 시 Flyway가 비어있어도 OK(아직 마이그레이션 없음 → 다음 태스크에서 추가).
+Expected: PASS (`NetzeroApplicationTests.contextLoads` 통과). `.env` 없이도 application.yml의 `${VAR:default}` 기본값으로 부팅. Flyway가 비어있어도 OK(엔티티는 Task 1.x에서 추가).
 
-> 주: V1 마이그레이션이 없으면 `ddl-auto: validate`가 매핑 검증할 엔티티도 없어 통과. 엔티티 추가는 Task 1.x에서 마이그레이션과 함께.
+> 주: V1 마이그레이션이 없으면 `ddl-auto: validate`가 매핑 검증할 엔티티도 없어 통과.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add build.gradle src/main/resources/application.yml src/test/resources/application.yml
+git add build.gradle src/main/resources/application.yml src/test/resources/application.yml .env.example .gitignore
 git rm src/main/resources/application.properties
-git commit -m "build: upgrade to Spring Boot 3.5.13 and add core deps (M0)"
+git commit -m "build: upgrade to Spring Boot 3.5.13, add core deps and .env.example (M0)"
 ```
 
 ---
