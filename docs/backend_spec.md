@@ -408,18 +408,27 @@ double wasteAvoidedKg = Math.max(0, baseline - qStar) * item.kgPerUnit();
 베이스: `/api/v1` · 포맷: JSON · 시간: ISO-8601(KST, `Asia/Seoul`) · 인증: §7 · 페이지네이션: `?page=&size=` (0-base).
 > 향후 버전관리는 Spring Boot 3.5 네이티브 **API versioning**(헤더/경로/쿼리)으로 이행 가능. 해커톤은 경로 `/v1` 고정.
 
+> 요청/응답 필드 JSON 예시와 **응답 envelope(`{success,data}`)** 의 권위 기준은 [`backend_api_spec.md`](./backend_api_spec.md). 본 절은 요약.
+
 ### 5.1 데이터 수집
-**`POST /api/v1/ingest/sales`** — multipart `file`(CSV), `storeId` (구 `/ingest/pos`)
+**`POST /api/v1/ingest/sales`** — multipart `file`(CSV), `storeId` (대량·풀컬럼)
 ```
 CSV 헤더: 날짜,요일,날씨,기온,강수mm,행사,신메뉴,품목,구분,판매수량,비고_시나리오
-Res 200: { "accepted": 360, "rejected": 2, "errors":[{"line":15,"reason":"INVALID_CATEGORY"}] }
+data: { "accepted": 360, "rejected": 2, "errors":[{"line":15,"code":"ITEM_NOT_FOUND","value":"없는품목"}] }
+```
+**`POST /api/v1/ingest/sales/daily`** — multipart `file`(CSV), `storeId`, body `eventFlag`,`newMenuFlag`,`scenarioNote` (하루치)
+```
+CSV 헤더: 날짜,요일,품목,구분,판매수량        (날씨 컬럼 없음 → WeatherForecast 백필 또는 null)
+body 메타(그날 전체 적용): eventFlag(bool), newMenuFlag(bool), scenarioNote(str, 예 "주말+맑음->수요 높음")
+저장: eventFlag/newMenuFlag → SalesRecord.event/newMenu 마커("Y"/null), scenarioNote → SalesRecord.scenarioNote
+data: { "appliedDate":"2026-06-28","accepted":2,"rejected":0,"eventFlag":false,"newMenuFlag":true,"errors":[] }
 ```
 **`POST /api/v1/ingest/inventory`** — multipart `file`, `storeId`
 ```
 CSV 헤더: 날짜,품목,구분,단위,발주,기초재고,수요,실판매,결품,폐기,기말재고
 ```
 **`POST /api/v1/weather/refresh`** — `{ "storeId":1, "date":"2026-06-27" }` → 기상청 즉시 수집 → `WeatherForecast`
-> 품목은 `품목ID` 또는 `품목명`으로 매칭(ItemMaster). 미존재 시 행 거부(`INVALID_CATEGORY`).
+> 품목은 `품목ID` 또는 `품목명`으로 매칭(ItemMaster). 미존재 시 행 거부(`ITEM_NOT_FOUND`).
 
 ### 5.2 분석 파이프라인
 **`POST /api/v1/pipeline/run`**
@@ -494,14 +503,16 @@ Res: { "answer":"...", "cacheHit":bool, "latencyMs":int, "tokens":int }
 - `GET /actuator/health`, `GET /actuator/metrics`, `GET /actuator/prometheus`(선택).
 - `GET /swagger-ui.html`, `GET /v3/api-docs`.
 
-### 5.7 표준 에러 포맷 (RFC 7807 호환 + code)
+### 5.7 응답 Envelope (성공/오류 일관 구조)
+모든 JSON 응답은 envelope으로 감싼다(상세·전체 코드표는 [`backend_api_spec.md`](./backend_api_spec.md) §1).
 ```json
-{ "type":"about:blank","title":"Bad Request","status":400,
-  "code":"INVALID_CSV","detail":"품목 'XYZ' not found at line 15",
-  "instance":"/api/v1/ingest/sales","timestamp":"2026-06-26T10:00:00+09:00" }
+// 성공
+{ "success": true, "data": { /* payload */ } }
+// 오류
+{ "success": false, "error": { "code": "CONTENT_NOT_FOUND", "message": "파일을 찾을 수 없습니다." } }
 ```
-**에러 코드 카탈로그:** `INVALID_CSV`, `INVALID_CATEGORY`, `STORE_NOT_FOUND`, `FORECAST_UNAVAILABLE`, `WEATHER_FETCH_FAILED`, `LLM_UNAVAILABLE`, `PIPELINE_ALREADY_RUNNING`, `VALIDATION_ERROR`.
-- `@RestControllerAdvice` + `ProblemDetail`(Spring 6) 사용.
+**에러 코드 카탈로그:** `VALIDATION_ERROR`, `INVALID_CSV`, `ITEM_NOT_FOUND`, `STORE_NOT_FOUND`, `CONTENT_NOT_FOUND`, `FORECAST_UNAVAILABLE`, `WEATHER_FETCH_FAILED`, `LLM_UNAVAILABLE`, `PIPELINE_ALREADY_RUNNING`, `INTERNAL_ERROR`.
+- 구현: `ApiResponse<T>` 래퍼 + `@RestControllerAdvice`. HTTP 상태코드는 code에 매핑. CSV 다운로드·actuator는 envelope 미적용.
 
 ### 5.8 데이터 추출 (CSV/엑셀 내보내기)
 월 단위(1개월) 추출. `Content-Type: text/csv; charset=UTF-8`(BOM 포함, 엑셀 한글 호환), 파일명은 `Content-Disposition`. `format=csv|xlsx`(기본 csv, xlsx는 Apache POI 옵션). 구현은 `export` 도메인의 `ExportService` + 스트리밍 응답.
@@ -620,7 +631,7 @@ com.netzero
 ├─ pipeline     (DailyPipelineService, PipelineScheduler, PipelineController)
 ├─ chat         (port: LlmPort+AiLlmClient[RestClient], ChatService, RagContextAssembler, ChatController)
 ├─ dashboard    (DashboardService, DashboardController)
-└─ common       (error[ProblemDetail advice], metrics, dto, BaseEntity)
+└─ common       (ApiResponse envelope, error[advice], metrics, dto, BaseEntity)
 ```
 
 ---
@@ -661,7 +672,7 @@ com.netzero
 2. **Spring Boot**: 3.5.3 → **3.5.13**(최신 패치), 4.0.x 이행 옵션 명시.
 3. **springdoc-openapi**: 2.6.0 → **2.8.17**(Spring Boot 3.5 호환).
 4. **PostgreSQL**: 16 → **17**.
-5. 에러 응답: 자체 포맷 → **`ProblemDetail`(RFC 7807)** + code 카탈로그.
+5. 응답 형식: **`{success,data}` / `{success,error{code,message}}`** envelope으로 일관화(`ApiResponse<T>`). 상세 API 계약은 `backend_api_spec.md`.
 6. Actuator/Micrometer 메트릭·resilience4j·API versioning 등 현행 권장 패턴 반영.
 
 ## 부록 C. 다일(커버기간) 발주 산출 예시 — 우유, 발주주기 7일·리드타임 1일

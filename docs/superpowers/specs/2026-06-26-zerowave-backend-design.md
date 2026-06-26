@@ -88,7 +88,7 @@ com.netzero.<domain>
 | **chat**     | ✅   | `LlmPort` + `AiLlmClient`(RestClient) — AI 서버                 |
 | pipeline     | —    | `DailyPipelineService`(오케스트레이터), `PipelineScheduler`     |
 | dashboard    | —    | 집계                                                            |
-| common       | —    | error(ProblemDetail advice), metrics, config, BaseEntity        |
+| common       | —    | ApiResponse envelope, error(advice), metrics, config, BaseEntity |
 
 → **포트는 weather·forecast·chat 3곳**(외부 호출 지점). 나머지는 표준 5레이어. 포트 인터페이스는 각각 테스트용 목 구현을 가져 AI 서버 없이 e2e 테스트 가능.
 
@@ -219,15 +219,16 @@ Res: { "answer":"...", "cacheHit":true, "latencyMs":180, "tokens":142 }
 
 ## 8. REST API (요약)
 
-베이스 `/api/v1` · JSON · KST. 상세 요청/응답은 [`backend_spec.md` §5](../../backend_spec.md).
+베이스 `/api/v1` · JSON · KST · 응답 envelope `{success,data}`. 상세 요청/응답 JSON은 [`backend_api_spec.md`](../../backend_api_spec.md).
 
 | 그룹     | 엔드포인트                                                                                 |
 | -------- | ------------------------------------------------------------------------------------------ |
-| 수집     | `POST /ingest/pos`, `POST /ingest/inventory`, `POST /weather/refresh`                      |
+| 수집     | `POST /ingest/sales`, `POST /ingest/sales/daily`, `POST /ingest/inventory`, `POST /weather/refresh` |
 | 분석     | `POST /pipeline/run`, `GET /forecast`, `GET /recommendations`, `GET /recommendations/{id}` |
 | 탄소     | `GET /carbon/today`, `GET /carbon/savings`, `GET /carbon/savings/summary`                  |
 | 대시보드 | `GET /dashboard/summary`                                                                   |
-| 챗       | `POST /chat`, `GET /chat/context`                                                          |
+| 챗       | `POST /chat`                                                                                |
+| 추출     | `GET /export/sales.csv`, `GET /export/store-inventory.csv`, `POST /export/archive`         |
 | 운영     | `/actuator/*`, `/swagger-ui.html`, `/v3/api-docs`                                          |
 
 ---
@@ -236,8 +237,8 @@ Res: { "answer":"...", "cacheHit":true, "latencyMs":180, "tokens":142 }
 
 ### 9.1 에러
 
-`@RestControllerAdvice` + `ProblemDetail`(RFC 7807) + code 카탈로그:
-`INVALID_CSV`, `INVALID_CATEGORY`, `STORE_NOT_FOUND`, `FORECAST_UNAVAILABLE`, `LLM_UNAVAILABLE`, `WEATHER_FETCH_FAILED`, `PIPELINE_ALREADY_RUNNING`, `VALIDATION_ERROR`.
+`ApiResponse<T>` envelope(`{success,data}` / `{success,error{code,message}}`) + `@RestControllerAdvice`. code 카탈로그:
+`VALIDATION_ERROR`, `INVALID_CSV`, `ITEM_NOT_FOUND`, `STORE_NOT_FOUND`, `CONTENT_NOT_FOUND`, `FORECAST_UNAVAILABLE`, `WEATHER_FETCH_FAILED`, `LLM_UNAVAILABLE`, `PIPELINE_ALREADY_RUNNING`, `INTERNAL_ERROR`. 상세는 `backend_api_spec.md` §1.
 
 ### 9.2 테스트 (TDD — 결정적 코어 우선)
 
@@ -255,7 +256,7 @@ Res: { "answer":"...", "cacheHit":true, "latencyMs":180, "tokens":142 }
 ## 10. 구현 마일스톤
 
 1. **M0 — 빌드 갱신:** Spring Boot 3.5.13, springdoc 2.8.17, RestClient, Flyway, actuator, resilience4j. 부팅 확인.
-2. **M1 — 골격:** Flyway 스키마+시드(카테고리/배출계수/데모매장), `/ingest/pos`, 합성데이터 적재.
+2. **M1 — 골격:** Flyway 스키마+시드(ItemMaster/데모매장/OrderPolicy), `/ingest/sales`·`/ingest/sales/daily`·`/ingest/inventory`, 합성데이터 적재, CSV 추출.
 3. **M2 — 결정적 코어(TDD):** newsvendor 발주 → 탄소 산정 → `/recommendations`, `/carbon/today`. (AI 서버 목으로 e2e)
 4. **M3 — 외부연동:** 기상청 수집(@HttpExchange), FeatureBuilder, `ForecastPort`(AI 실연동), `/pipeline/run`, `/dashboard/summary`.
 5. **M4 — 챗:** `LlmPort` 실연동, `RagContextAssembler`, `/chat` + 계측.

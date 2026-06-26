@@ -441,27 +441,53 @@ git add src/main/java/com/netzero/store src/main/resources/db/migration/V2__seed
 git commit -m "feat: add master entities, seeds, repositories (M1)"
 ```
 
-### Task 1.3: 공통 에러 처리(ProblemDetail)
+### Task 1.3: 공통 응답 Envelope + 에러 처리
 
 **Files:**
-- Create: `common/error/{ErrorCode,ApiException,GlobalExceptionHandler}.java`
+- Create: `common/ApiResponse.java`, `common/error/{ErrorCode,ApiException,GlobalExceptionHandler}.java`
 - Test: `src/test/java/com/netzero/common/GlobalExceptionHandlerTest.java`
 
 **Interfaces:**
-- Produces: `enum ErrorCode { INVALID_CSV, INVALID_CATEGORY, STORE_NOT_FOUND, FORECAST_UNAVAILABLE, WEATHER_FETCH_FAILED, LLM_UNAVAILABLE, PIPELINE_ALREADY_RUNNING, VALIDATION_ERROR }` each with `HttpStatus`. `ApiException(ErrorCode, String detail)`. `@RestControllerAdvice` → `ProblemDetail` with `properties["code"]`.
+- Produces:
+  - `ApiResponse<T>` — `record ApiResponse<T>(boolean success, T data, ApiError error)` with `static <T> ApiResponse<T> ok(T data)` (success=true, error=null) and `static ApiResponse<?> error(ErrorCode code, String message)`. `record ApiError(String code, String message)`. **null 필드는 JSON에서 생략**(`@JsonInclude(NON_NULL)`).
+  - `enum ErrorCode` (각 `HttpStatus status` + `String defaultMessage`): `VALIDATION_ERROR, INVALID_CSV, ITEM_NOT_FOUND, STORE_NOT_FOUND, CONTENT_NOT_FOUND, FORECAST_UNAVAILABLE, WEATHER_FETCH_FAILED, LLM_UNAVAILABLE, PIPELINE_ALREADY_RUNNING, INTERNAL_ERROR`.
+  - `ApiException(ErrorCode code, String message)`.
+  - `@RestControllerAdvice` → `ResponseEntity<ApiResponse<?>>` with HTTP status = `code.status`, body = `{success:false, error:{code,message}}`.
+- 컨트롤러는 성공 시 `ApiResponse.ok(payload)` 반환(backend_api_spec §1.1).
 
-- [ ] **Step 1: ErrorCode + ApiException 작성**
+- [ ] **Step 1: ApiResponse + ErrorCode + ApiException 작성**
 
+```java
+// common/ApiResponse.java
+package com.netzero.common;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.netzero.common.error.ErrorCode;
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record ApiResponse<T>(boolean success, T data, ApiError error) {
+  public record ApiError(String code, String message) {}
+  public static <T> ApiResponse<T> ok(T data){ return new ApiResponse<>(true, data, null); }
+  public static ApiResponse<Void> error(ErrorCode code, String message){
+    return new ApiResponse<>(false, null, new ApiError(code.name(), message));
+  }
+}
+```
 ```java
 // common/error/ErrorCode.java
 package com.netzero.common.error;
 import org.springframework.http.HttpStatus;
 public enum ErrorCode {
-  INVALID_CSV(HttpStatus.BAD_REQUEST), INVALID_CATEGORY(HttpStatus.BAD_REQUEST),
-  STORE_NOT_FOUND(HttpStatus.NOT_FOUND), FORECAST_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE),
-  WEATHER_FETCH_FAILED(HttpStatus.BAD_GATEWAY), LLM_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE),
-  PIPELINE_ALREADY_RUNNING(HttpStatus.CONFLICT), VALIDATION_ERROR(HttpStatus.BAD_REQUEST);
-  public final HttpStatus status; ErrorCode(HttpStatus s){this.status=s;}
+  VALIDATION_ERROR(HttpStatus.BAD_REQUEST, "요청 형식이 올바르지 않습니다."),
+  INVALID_CSV(HttpStatus.BAD_REQUEST, "CSV 형식이 올바르지 않습니다."),
+  ITEM_NOT_FOUND(HttpStatus.BAD_REQUEST, "품목을 찾을 수 없습니다."),
+  STORE_NOT_FOUND(HttpStatus.NOT_FOUND, "매장을 찾을 수 없습니다."),
+  CONTENT_NOT_FOUND(HttpStatus.NOT_FOUND, "파일을 찾을 수 없습니다."),
+  FORECAST_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "수요예측 서버를 사용할 수 없습니다."),
+  WEATHER_FETCH_FAILED(HttpStatus.BAD_GATEWAY, "날씨 정보를 가져오지 못했습니다."),
+  LLM_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "챗봇 서버를 사용할 수 없습니다."),
+  PIPELINE_ALREADY_RUNNING(HttpStatus.CONFLICT, "이미 실행 중인 파이프라인이 있습니다."),
+  INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "내부 오류가 발생했습니다.");
+  public final HttpStatus status; public final String defaultMessage;
+  ErrorCode(HttpStatus s, String m){ this.status=s; this.defaultMessage=m; }
 }
 ```
 ```java
@@ -469,7 +495,8 @@ public enum ErrorCode {
 package com.netzero.common.error;
 public class ApiException extends RuntimeException {
   public final ErrorCode code;
-  public ApiException(ErrorCode code, String detail){ super(detail); this.code=code; }
+  public ApiException(ErrorCode code){ super(code.defaultMessage); this.code=code; }
+  public ApiException(ErrorCode code, String message){ super(message); this.code=code; }
 }
 ```
 
@@ -478,24 +505,28 @@ public class ApiException extends RuntimeException {
 ```java
 // common/error/GlobalExceptionHandler.java
 package com.netzero.common.error;
-import org.springframework.http.*; import org.springframework.web.bind.annotation.*;
-import java.time.OffsetDateTime;
+import com.netzero.common.ApiResponse;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
   @ExceptionHandler(ApiException.class)
-  public ProblemDetail handle(ApiException ex) {
-    var pd = ProblemDetail.forStatusAndDetail(ex.code.status, ex.getMessage());
-    pd.setProperty("code", ex.code.name());
-    pd.setProperty("timestamp", OffsetDateTime.now().toString());
-    return pd;
+  public ResponseEntity<ApiResponse<Void>> handle(ApiException ex) {
+    return ResponseEntity.status(ex.code.status)
+      .body(ApiResponse.error(ex.code, ex.getMessage()));
+  }
+  @ExceptionHandler(Exception.class)
+  public ResponseEntity<ApiResponse<Void>> handleOther(Exception ex) {
+    return ResponseEntity.status(ErrorCode.INTERNAL_ERROR.status)
+      .body(ApiResponse.error(ErrorCode.INTERNAL_ERROR, ErrorCode.INTERNAL_ERROR.defaultMessage));
   }
 }
 ```
 
-- [ ] **Step 3: 테스트 작성** (`@WebMvcTest`에 더미 컨트롤러로 예외 던지고 검증)
+- [ ] **Step 3: 테스트 작성** (standalone MockMvc, 더미 컨트롤러로 예외 검증)
 
 ```java
-// test/.../common/GlobalExceptionHandlerTest.java — standalone MockMvc
+// test/.../common/GlobalExceptionHandlerTest.java
 package com.netzero.common;
 import com.netzero.common.error.*;
 import org.junit.jupiter.api.Test;
@@ -506,32 +537,42 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class GlobalExceptionHandlerTest {
-  @RestController static class Dummy { @GetMapping("/boom")
-    String boom(){ throw new ApiException(ErrorCode.STORE_NOT_FOUND,"no store"); } }
-  @Test void returnsProblemDetailWithCode() throws Exception {
+  @RestController static class Dummy {
+    @GetMapping("/boom") String boom(){ throw new ApiException(ErrorCode.CONTENT_NOT_FOUND, "파일을 찾을 수 없습니다."); }
+  }
+  @Test void returnsEnvelopeError() throws Exception {
     MockMvc mvc = MockMvcBuilders.standaloneSetup(new Dummy())
       .setControllerAdvice(new GlobalExceptionHandler()).build();
     mvc.perform(get("/boom"))
       .andExpect(status().isNotFound())
-      .andExpect(jsonPath("$.code").value("STORE_NOT_FOUND"))
-      .andExpect(jsonPath("$.detail").value("no store"));
+      .andExpect(jsonPath("$.success").value(false))
+      .andExpect(jsonPath("$.error.code").value("CONTENT_NOT_FOUND"))
+      .andExpect(jsonPath("$.error.message").value("파일을 찾을 수 없습니다."))
+      .andExpect(jsonPath("$.data").doesNotExist());
   }
 }
 ```
 
 - [ ] **Step 4: 실행** — Run: `./gradlew test --tests com.netzero.common.GlobalExceptionHandlerTest` → Expected: PASS.
-- [ ] **Step 5: Commit** — `git add src/main/java/com/netzero/common/error src/test/java/com/netzero/common && git commit -m "feat: ProblemDetail error handling (M1)"`
+- [ ] **Step 5: Commit** — `git add src/main/java/com/netzero/common src/test/java/com/netzero/common && git commit -m "feat: ApiResponse envelope and error handling (M1)"`
 
-### Task 1.4: 판매 CSV 수집 (`POST /api/v1/ingest/sales`)
+> 이후 모든 컨트롤러는 `ApiResponse<T>`를 반환한다(성공 `ApiResponse.ok(payload)`). 이전 태스크의 예시 응답 JSON은 `data` payload 기준이므로 컨트롤러에서 `ok()`로 감싼다.
+
+### Task 1.4: 판매 CSV 수집 (`POST /api/v1/ingest/sales` + `/ingest/sales/daily`)
 
 **Files:**
 - Create: `store/domain/SalesRecord.java`, `store/repository/SalesRecordRepository.java`
-- Create: `ingest/CsvParser.java`, `ingest/service/SalesCsvService.java`, `ingest/dto/IngestResult.java`, `ingest/controller/IngestController.java`
+- Create: `ingest/CsvParser.java`, `ingest/service/SalesCsvService.java`, `ingest/dto/{IngestResult,DailyIngestResult}.java`, `ingest/controller/IngestController.java`
 - Test: `src/test/java/com/netzero/ingest/SalesCsvServiceTest.java`
 
 **Interfaces:**
 - Consumes: `ItemMasterRepository.findByName`.
-- Produces: `SalesCsvService.ingest(Long storeId, InputStream csv): IngestResult`. `record IngestResult(int accepted, int rejected, List<RowError> errors)`, `record RowError(int line, String reason)`. CSV 헤더 `날짜,요일,날씨,기온,강수mm,행사,신메뉴,품목,구분,판매수량,비고_시나리오`.
+- Produces:
+  - `record IngestResult(int accepted, int rejected, List<RowError> errors)`, `record RowError(int line, String code, String value)`.
+  - `record DailyIngestResult(LocalDate appliedDate, int accepted, int rejected, boolean eventFlag, boolean newMenuFlag, List<RowError> errors)`.
+  - `SalesCsvService.ingest(Long storeId, InputStream csv): IngestResult` — 풀컬럼 CSV(헤더 `날짜,요일,날씨,기온,강수mm,행사,신메뉴,품목,구분,판매수량,비고_시나리오`).
+  - `SalesCsvService.ingestDaily(Long storeId, InputStream csv, boolean eventFlag, boolean newMenuFlag, String scenarioNote): DailyIngestResult` — 하루치 CSV(헤더 `날짜,요일,품목,구분,판매수량`), body 메타를 모든 행에 적용. event/newMenu는 `"Y"`/null 마커로 저장, 날씨/기온/강수는 null.
+  - 컨트롤러는 `ApiResponse<IngestResult>` / `ApiResponse<DailyIngestResult>` 반환.
 
 - [ ] **Step 1: SalesRecord 엔티티 + repo 작성** (V1 컬럼 매핑, `getQuantitySold():BigDecimal`, `getBusinessDate():LocalDate`, `getItemId():Long`). Repo: `List<SalesRecord> findByStoreIdAndBusinessDateBetween(Long, LocalDate, LocalDate)`.
 
@@ -550,7 +591,15 @@ class SalesCsvServiceTest {
     var r = svc.ingest(1L, new java.io.ByteArrayInputStream(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
     org.assertj.core.api.Assertions.assertThat(r.accepted()).isEqualTo(1);
     org.assertj.core.api.Assertions.assertThat(r.rejected()).isEqualTo(1);
-    org.assertj.core.api.Assertions.assertThat(r.errors().get(0).reason()).isEqualTo("INVALID_CATEGORY");
+    org.assertj.core.api.Assertions.assertThat(r.errors().get(0).code()).isEqualTo("ITEM_NOT_FOUND");
+  }
+  @org.junit.jupiter.api.Test void dailyUploadAppliesBodyMeta() {
+    String csv = "날짜,요일,품목,구분,판매수량\n2026-06-28,일,우유,원재료,11\n";
+    var r = svc.ingestDaily(1L, new java.io.ByteArrayInputStream(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+              false, true, "주말+맑음->수요 높음");
+    org.assertj.core.api.Assertions.assertThat(r.accepted()).isEqualTo(1);
+    org.assertj.core.api.Assertions.assertThat(r.appliedDate()).isEqualTo(java.time.LocalDate.parse("2026-06-28"));
+    org.assertj.core.api.Assertions.assertThat(r.newMenuFlag()).isTrue();
   }
 }
 ```
@@ -601,7 +650,7 @@ public class SalesCsvService {
     int line=1;
     for (var r : rows) { line++;
       var item = items.findByName(r.get("품목")).orElse(null);
-      if (item == null) { errors.add(new IngestResult.RowError(line,"INVALID_CATEGORY")); continue; }
+      if (item == null) { errors.add(new IngestResult.RowError(line,"ITEM_NOT_FOUND", r.get("품목"))); continue; }
       var rec = new SalesRecord(storeId, LocalDate.parse(r.get("날짜")), r.get("요일"), r.get("날씨"),
         bd(r.get("기온")), bd(r.get("강수mm")), nz(r.get("행사")), nz(r.get("신메뉴")),
         item.getCategory().name(), item.getId(), bd(r.get("판매수량")), nz(r.get("비고_시나리오")));
@@ -609,11 +658,29 @@ public class SalesCsvService {
     }
     return new IngestResult(accepted, errors.size(), errors);
   }
+  @Transactional
+  public DailyIngestResult ingestDaily(Long storeId, InputStream csv, boolean eventFlag,
+                                       boolean newMenuFlag, String scenarioNote) {
+    var rows = CsvParser.parse(csv); int accepted=0; var errors=new ArrayList<IngestResult.RowError>();
+    LocalDate applied=null; int line=1;
+    String eventMark = eventFlag? "Y" : null, newMenuMark = newMenuFlag? "Y" : null;
+    for (var r : rows) { line++;
+      var item = items.findByName(r.get("품목")).orElse(null);
+      if (item == null) { errors.add(new IngestResult.RowError(line,"ITEM_NOT_FOUND", r.get("품목"))); continue; }
+      LocalDate d = LocalDate.parse(r.get("날짜")); applied = d;
+      // 날씨/기온/강수는 null(WeatherForecast 백필은 파이프라인 단계)
+      var rec = new SalesRecord(storeId, d, r.get("요일"), null, null, null,
+        eventMark, newMenuMark, item.getCategory().name(), item.getId(),
+        bd(r.get("판매수량")), nz(scenarioNote));
+      sales.save(rec); accepted++;
+    }
+    return new DailyIngestResult(applied, accepted, errors.size(), eventFlag, newMenuFlag, errors);
+  }
   private static BigDecimal bd(String s){ return s==null||s.isBlank()? null : new BigDecimal(s); }
   private static String nz(String s){ return s==null||s.isBlank()? null : s; }
 }
 ```
-(`SalesRecord`에 위 인자 순서의 생성자 추가. `IngestResult` record 작성.)
+(`SalesRecord`에 위 인자 순서의 생성자 추가. `IngestResult`·`DailyIngestResult` record 작성.)
 
 - [ ] **Step 5: 실행하여 통과** — Run: `./gradlew test --tests com.netzero.ingest.SalesCsvServiceTest` → Expected: PASS.
 
@@ -621,21 +688,33 @@ public class SalesCsvService {
 
 ```java
 // ingest/controller/IngestController.java
-@org.springframework.web.bind.annotation.RestController
-@org.springframework.web.bind.annotation.RequestMapping("/api/v1/ingest")
+package com.netzero.ingest.controller;
+import com.netzero.common.ApiResponse; import com.netzero.ingest.dto.*;
+import com.netzero.ingest.service.SalesCsvService;
+import org.springframework.web.bind.annotation.*; import org.springframework.web.multipart.MultipartFile;
+import java.io.IOException;
+@RestController @RequestMapping("/api/v1/ingest")
 public class IngestController {
-  private final com.netzero.ingest.service.SalesCsvService sales;
-  public IngestController(com.netzero.ingest.service.SalesCsvService s){this.sales=s;}
-  @org.springframework.web.bind.annotation.PostMapping(value="/sales", consumes="multipart/form-data")
-  public com.netzero.ingest.dto.IngestResult sales(
-      @org.springframework.web.bind.annotation.RequestParam Long storeId,
-      @org.springframework.web.bind.annotation.RequestParam org.springframework.web.multipart.MultipartFile file) throws java.io.IOException {
-    return sales.ingest(storeId, file.getInputStream());
+  private final SalesCsvService sales;
+  public IngestController(SalesCsvService s){ this.sales=s; }
+
+  @PostMapping(value="/sales", consumes="multipart/form-data")
+  public ApiResponse<IngestResult> sales(@RequestParam Long storeId,
+      @RequestParam MultipartFile file) throws IOException {
+    return ApiResponse.ok(sales.ingest(storeId, file.getInputStream()));
+  }
+
+  @PostMapping(value="/sales/daily", consumes="multipart/form-data")
+  public ApiResponse<DailyIngestResult> salesDaily(@RequestParam Long storeId,
+      @RequestParam MultipartFile file,
+      @RequestParam boolean eventFlag, @RequestParam boolean newMenuFlag,
+      @RequestParam(required=false) String scenarioNote) throws IOException {
+    return ApiResponse.ok(sales.ingestDaily(storeId, file.getInputStream(), eventFlag, newMenuFlag, scenarioNote));
   }
 }
 ```
 
-- [ ] **Step 7: Commit** — `git add src/main/java/com/netzero/ingest src/main/java/com/netzero/store/domain/SalesRecord.java src/main/java/com/netzero/store/repository/SalesRecordRepository.java src/test/java/com/netzero/ingest && git commit -m "feat: sales CSV ingest (M1)"`
+- [ ] **Step 7: Commit** — `git add src/main/java/com/netzero/ingest src/main/java/com/netzero/store/domain/SalesRecord.java src/main/java/com/netzero/store/repository/SalesRecordRepository.java src/test/java/com/netzero/ingest && git commit -m "feat: sales CSV ingest (bulk + daily) (M1)"`
 
 ### Task 1.5: 재고 CSV 수집 + InventorySnapshot 엔티티
 
