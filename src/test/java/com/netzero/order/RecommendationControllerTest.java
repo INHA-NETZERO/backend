@@ -4,6 +4,7 @@ import com.netzero.config.SecurityConfig;
 import com.netzero.order.controller.RecommendationController;
 import com.netzero.order.dto.RecommendationItem;
 import com.netzero.order.dto.RecommendationResponse;
+import com.netzero.order.service.ActualOrderService;
 import com.netzero.order.service.OrderOptimizationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +33,9 @@ class RecommendationControllerTest {
 
     @MockitoBean
     OrderOptimizationService orderOptimizationService;
+
+    @MockitoBean
+    ActualOrderService actualOrderService;
 
     @Test
     void getRecommendations_returns200AndSuccessTrue() throws Exception {
