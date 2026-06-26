@@ -14,14 +14,17 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Optional;
+import com.netzero.weather.WeatherProvider;
+import com.netzero.weather.dto.DailyWeather;
 
 @Service
 public class SalesCsvService {
     private final ItemMasterRepository items;
     private final SalesRecordRepository sales;
-    private final com.netzero.weather.WeatherProvider weather;
+    private final WeatherProvider weather;
 
-    public SalesCsvService(ItemMasterRepository i, SalesRecordRepository s, com.netzero.weather.WeatherProvider w) {
+    public SalesCsvService(ItemMasterRepository i, SalesRecordRepository s, WeatherProvider w) {
         this.items = i;
         this.sales = s;
         this.weather = w;
@@ -56,7 +59,7 @@ public class SalesCsvService {
         var errors = new ArrayList<IngestResult.RowError>();
         LocalDate applied = null;
         int line = 1;
-        var weatherCache = new HashMap<LocalDate, com.netzero.weather.dto.DailyWeather>();
+        var weatherCache = new HashMap<LocalDate, Optional<DailyWeather>>();
         for (var r : rows) {
             line++;
             var item = items.findByName(r.get("품목")).orElse(null);
@@ -67,7 +70,8 @@ public class SalesCsvService {
             LocalDate d = LocalDate.parse(r.get("날짜"));
             applied = d;
             // 기상청 날씨 보강(날짜당 1회 조회, 실패/미연동 시 null)
-            var w = weatherCache.computeIfAbsent(d, dd -> weather.lookup(storeId, dd).orElse(null));
+            var optW = weatherCache.computeIfAbsent(d, dd -> weather.lookup(storeId, dd));
+            var w = optW.orElse(null);
             String wx = w != null ? w.weather() : null;
             BigDecimal temp = w != null ? w.avgTemp() : null;
             BigDecimal precip = w != null ? w.precipitationMm() : null;
