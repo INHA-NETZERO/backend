@@ -123,6 +123,16 @@ class ActualOrderServiceTest {
     }
 
     @Test
+    void apply_invalidStoreId_throwsStoreNotFound() {
+        var req = new ActualOrderRequest(999L, LocalDate.now(), List.of(
+            new ActualOrderItem(1L, BigDecimal.TEN)
+        ));
+        assertThatThrownBy(() -> actualOrderService.apply(req))
+            .isInstanceOf(ApiException.class)
+            .satisfies(e -> assertThat(((ApiException) e).code).isEqualTo(ErrorCode.STORE_NOT_FOUND));
+    }
+
+    @Test
     void optimize_rerun_doesNotOverwriteActualQuantity() {
         ItemMaster milk = itemMasterRepository.findByName("우유").orElseThrow();
         Long milkId = milk.getId();

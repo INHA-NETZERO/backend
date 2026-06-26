@@ -9,6 +9,7 @@ import com.netzero.order.dto.ActualOrderRequest;
 import com.netzero.order.dto.ActualOrderResult;
 import com.netzero.order.repository.OrderRecommendationRepository;
 import com.netzero.store.repository.ItemMasterRepository;
+import com.netzero.store.repository.StoreRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,15 +24,22 @@ public class ActualOrderService {
 
     private final OrderRecommendationRepository orderRecommendationRepository;
     private final ItemMasterRepository itemMasterRepository;
+    private final StoreRepository storeRepository;
 
     public ActualOrderService(OrderRecommendationRepository orderRecommendationRepository,
-                              ItemMasterRepository itemMasterRepository) {
+                              ItemMasterRepository itemMasterRepository,
+                              StoreRepository storeRepository) {
         this.orderRecommendationRepository = orderRecommendationRepository;
         this.itemMasterRepository = itemMasterRepository;
+        this.storeRepository = storeRepository;
     }
 
     @Transactional
     public ActualOrderResult apply(ActualOrderRequest req) {
+        if (!storeRepository.existsById(req.storeId())) {
+            throw new ApiException(ErrorCode.STORE_NOT_FOUND, "Store not found: " + req.storeId());
+        }
+
         int updated = 0;
         List<Long> notFound = new ArrayList<>();
         List<ActualOrderLine> lines = new ArrayList<>();
