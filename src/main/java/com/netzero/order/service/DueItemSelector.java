@@ -4,14 +4,12 @@ import com.netzero.store.domain.InventorySnapshot;
 import com.netzero.store.domain.OrderPolicy;
 import com.netzero.store.repository.InventorySnapshotRepository;
 import com.netzero.store.repository.OrderPolicyRepository;
-import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-@Service
 public class DueItemSelector {
 
     private final OrderPolicyRepository orderPolicyRepository;
