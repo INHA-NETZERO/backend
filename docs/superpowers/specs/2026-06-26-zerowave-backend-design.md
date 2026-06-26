@@ -79,7 +79,7 @@ com.netzero.<domain>
 | ------------ | ---- | --------------------------------------------------------------- |
 | store        | —    | Store, **ItemMaster**, **OrderPolicy** 마스터                   |
 | ingest       | —    | 판매/재고 CSV → SalesRecord/InventorySnapshot                   |
-| **export**   | —    | sales.csv / store-inventory.csv 월단위 추출(CSV/xlsx)           |
+| **export**   | —    | sales/store-inventory CSV 월단위 추출 + **월말 S3 아카이빙·presigned URL**(AI에 판매CSV 전달) |
 | **weather**  | ✅   | `KmaForecastPort` + `KmaForecastClient`(@HttpExchange) — 기상청 |
 | feature      | —    | `FeatureBuilder`(DB → 피처벡터), `HolidayCalendar`              |
 | **forecast** | ✅   | `ForecastPort` + `AiForecastClient`(RestClient) — AI 서버       |
@@ -147,6 +147,7 @@ Spring → 프론트: { answer, groundedOn:{ids}, cacheHit, llmLatencyMs, tokens
 ```json
 Req: {
   "storeId": 1, "targetDate": "2026-06-27",
+  "salesHistory": { "presignedUrls":[ "https://...s3.../sales-2026-05.csv?X-Amz-..." ], "format":"sales_csv_v1" },
   "coverage": { "leadTimeDays":1, "orderCycleDays":7, "coverageDays":8 },
   "weather": [ { "forecastDate":"2026-06-28","avgTemp":21.2,
                  "precipitationMm":12.0,"precipitationProb":80,"skyCode":4 } ],  // 커버기간 일수만큼(가용분), 기온=평균온도

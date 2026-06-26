@@ -73,6 +73,10 @@ dependencies {
     runtimeOnly  'org.postgresql:postgresql'                                   // 추가
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.17'  // 추가
     implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.2.0'    // 추가(외부호출 회복)
+    implementation platform('software.amazon.awssdk:bom:2.31.0')              // 추가(S3 BOM)
+    implementation 'software.amazon.awssdk:s3'                                 // 추가(월말 CSV 업로드)
+    implementation 'software.amazon.awssdk:s3-transfer-manager'               // 선택(대용량/멀티파트)
+    // S3Presigner는 s3 모듈에 포함(presigned URL 발급)
     // 주의: spring-boot-starter-webflux 는 추가하지 않는다 → RestClient 로 충분(§2.4)
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
@@ -325,6 +329,7 @@ POS CSV ─┐
 **커버기간 개념(발주주기·리드타임):** 지금 발주하면 **리드타임** 뒤 입고되어 **다음 발주분이 들어올 때까지(=발주주기)** 버텨야 한다. 따라서 충당해야 할 수요 = **리드타임+발주주기 일수**의 합. `OrderPolicy.leadTimeDays`, `OrderPolicy.orderCycleDays`를 예측 요청에 함께 전달해 AI가 그 기간만큼 일별 예측을 반환하면, 백엔드가 **합산**해 발주량을 구한다.
 
 **예측 서비스 계약** — `POST {ai.base-url}/v1/order-recommendation` (발주용 커버기간 예측; 날씨·커버기간은 store·date 공통이라 top-level 분리):
+> 백엔드는 정형 피처와 함께 **판매내역 CSV의 S3 presigned GET URL**(`salesHistory.presignedUrls`, 최근 `ai.sales-history-months`개월)을 첨부한다. AI가 다운로드해 추론에 사용(§5.9, ai_server_api_spec.md §3.5).
 > 발주와 무관한 단순 익일 수요는 별도 엔드포인트 `POST {ai.base-url}/v1/forecast`(단일일 분위)를 사용한다. 상세는 [`ai_server_api_spec.md`](./ai_server_api_spec.md) §3·§4.
 ```
 Req:  { "storeId":1, "targetDate":"2026-06-27",
@@ -516,6 +521,17 @@ SalesRecord를 그대로 투영(매장 단위, 월 범위).
 ```
 > 산출 컬럼(결품·폐기·폐기_kg·탄소·비용)은 InventorySnapshot 적재 시 계산됨(§3.2 InventorySnapshot 규칙 참조).
 
+### 5.9 월말 S3 아카이빙 (MonthlyExportScheduler)
+**매달 말일**에 해당 월(1개월치) **판매내역·재고관리내역 CSV를 생성해 S3에 저장**한다. 위 §5.8과 동일 컬럼 규약을 재사용.
+- **스케줄:** `@Scheduled`(cron, KST 매월 말일 자정 무렵). Demo는 `POST /api/v1/export/archive?storeId=&month=` 수동 트리거도 제공.
+- **산출물·키 규칙(S3):**
+  - 판매내역 → `s3://{bucket}/sales/store{storeId}/sales-{YYYY-MM}.csv`
+  - 재고관리 → `s3://{bucket}/inventory/store{storeId}/store-inventory-{YYYY-MM}.csv`
+- **용도:** ① 데이터 아카이브, ② **AI 예측 요청 시 판매내역 CSV의 presigned GET URL을 생성해 전달**(AI가 추론모델 입력으로 사용 — ai_server_api_spec.md §3.5).
+- **presigned URL:** `S3Presigner`로 읽기전용·시간제한(예: 10분) GET URL 발급. 예측 호출(`ForecastPort`) 직전 최근 N개월 sales CSV에 대해 생성해 `salesHistory.presignedUrls`로 첨부.
+- **Demo/로컬:** 실제 S3 또는 **S3 호환(MinIO/LocalStack)**. 버킷·자격증명은 env로 주입.
+- **구현:** `export` 도메인의 `S3ArchiveService`(업로드) + `PresignService`(URL 발급).
+
 ---
 
 ## 6. 설정 (application.yml)
@@ -539,6 +555,14 @@ ai:                                      # Python AI 서버 (수요예측 + sLLM
   order-recommendation-path: /v1/order-recommendation   # 발주용 커버기간 예측
   forecast-path: /v1/forecast                           # 익일 단일 수요예측
   generate-path: /v1/generate
+  sales-history-months: 3                                # 예측 요청에 첨부할 최근 판매 CSV 개월 수
+
+storage:                                 # S3(또는 MinIO/LocalStack) 월말 아카이빙·presigned URL
+  s3:
+    bucket: ${S3_BUCKET:zerowave}
+    region: ${AWS_REGION:ap-northeast-2}
+    endpoint: ${S3_ENDPOINT:}            # MinIO/LocalStack 사용 시 지정(비우면 실제 S3)
+    presign-expiry-seconds: 600          # presigned GET URL 유효시간(10분)
 
 optimization:
   default-cu: 1.0                        # 품목별 비용 미지정 시 기본
@@ -592,7 +616,7 @@ com.netzero
 ├─ forecast     (port: ForecastPort+AiForecastClient[RestClient], DemandForecastService)  ← 자체 폴백 없음
 ├─ order        (OrderOptimizationService, Newsvendor, QuantileInterpolator)
 ├─ carbon       (CarbonAccountingService, repository)  ← EF는 ItemMaster
-├─ export       (ExportService, SalesCsvExporter, InventoryFlowExporter, ExportController)
+├─ export       (ExportService, SalesCsvExporter, InventoryFlowExporter, S3ArchiveService, PresignService, MonthlyExportScheduler, ExportController)
 ├─ pipeline     (DailyPipelineService, PipelineScheduler, PipelineController)
 ├─ chat         (port: LlmPort+AiLlmClient[RestClient], ChatService, RagContextAssembler, ChatController)
 ├─ dashboard    (DashboardService, DashboardController)
@@ -605,7 +629,7 @@ com.netzero
 1. **M0 — 의존성/빌드 갱신:** §2.2 적용(Spring Boot 3.5.13, springdoc 2.8.17, RestClient, Flyway, Actuator). 부팅 확인.
 2. **M1 — 골격:** Flyway 스키마+시드(ItemMaster/데모매장/OrderPolicy), `/ingest/sales`·`/ingest/inventory`, 합성데이터 적재, `/export/*` 추출.
 3. **M2 — 산정 코어:** newsvendor 발주 → 탄소 산정 → `/recommendations`,`/carbon/today`. (AI 서버 목으로 end-to-end)
-4. **M3 — 외부연동:** 기상청 수집(@HttpExchange), 피처 반영, ForecastPort 실연동, `/pipeline/run`, `/dashboard/summary`.
+4. **M3 — 외부연동:** 기상청 수집(@HttpExchange), 피처 반영, ForecastPort 실연동(판매CSV presigned URL 첨부), S3 월말 아카이빙(`MonthlyExportScheduler`), `/pipeline/run`, `/dashboard/summary`.
 5. **M4 — 언어계층:** `/chat` 프록시 + RAG 근거 번들 + 계측 메트릭.
 6. **M5 — 정확도/시연:** LightGBM AI 서버 통합, WAPE 로깅, 데모 시나리오.
 
