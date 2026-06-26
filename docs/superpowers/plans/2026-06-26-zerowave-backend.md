@@ -299,9 +299,10 @@ CREATE TABLE demand_forecast (
 CREATE TABLE order_recommendation (
   id BIGINT AUTO_INCREMENT PRIMARY KEY, store_id BIGINT NOT NULL REFERENCES store(id),
   item_id BIGINT NOT NULL REFERENCES item_master(id), target_date DATE NOT NULL,
-  recommended_quantity NUMERIC(12,3), optimal_stock_quantity NUMERIC(12,3), baseline_quantity NUMERIC(12,3),
+  recommended_quantity NUMERIC(12,3), actual_quantity NUMERIC(12,3), actual_updated_at TIMESTAMP NULL,
+  optimal_stock_quantity NUMERIC(12,3), baseline_quantity NUMERIC(12,3),
   critical_ratio NUMERIC(6,4), expected_waste_avoided_kg NUMERIC(12,3), rationale JSON,
-  UNIQUE (store_id, item_id, target_date));
+  UNIQUE (store_id, item_id, target_date));  -- recommended_quantity=시스템추천, actual_quantity=사용자실제발주(NULL=미입력)
 
 CREATE TABLE carbon_saving (
   id BIGINT AUTO_INCREMENT PRIMARY KEY, store_id BIGINT NOT NULL REFERENCES store(id),
@@ -1085,7 +1086,8 @@ public final class Newsvendor {
 - Produces:
   - `FeatureBuilder.build(Long storeId, Long itemId, LocalDate targetDate): Map<String,Object>` → `{dayOfWeek, isHoliday(M2=false 고정), ma7(최근7일 평균), trend(M2=0.0)}`. 공휴일·날씨 피처 고도화는 M3 Task 3.3.
   - `DemandForecastService.forecast(Long storeId, LocalDate targetDate, List<Long> itemIds, List<WeatherSnapshot> weather, List<String> presignedUrls): ForecastResponse` — 각 item의 `OrderPolicy`로 `CoverageSpec` 구성, `FeatureBuilder`로 features 조립, `ForecastRequest` 빌드 → `ForecastPort.orderRecommendation` 호출 → 품목별 일별 분위를 `DemandForecast`(합산 p10/p50/p90, features JSON 문자열)로 upsert 저장 후 응답 반환.
-  - `OrderOptimizationService.optimize(Long storeId, LocalDate targetDate, List<Long> itemIds): List<OrderRecommendation>` — 저장된 `DemandForecast` 읽어 `Newsvendor`로 `Q*`·실발주(onHand=최신 `closingStock`, lot=`OrderPolicy.orderLotUnit`) 산출, `OrderRecommendation` upsert, `CarbonAccountingService`로 `CarbonSaving` upsert. baseline=과거 동요일 평균×coverageDays. cu/co는 ItemMaster(판매단가 없으면 `optimization.default-cu/co`).
+  - `OrderOptimizationService.optimize(Long storeId, LocalDate targetDate, List<Long> itemIds): List<OrderRecommendation>` — 저장된 `DemandForecast` 읽어 `Newsvendor`로 `Q*`·실발주(onHand=최신 `closingStock`, lot=`OrderPolicy.orderLotUnit`) 산출, `OrderRecommendation` upsert(=`recommendedQuantity` 등 시스템 산출 컬럼만 갱신; **사용자 입력 `actualQuantity`/`actualUpdatedAt`은 보존 — 재실행해도 덮어쓰지 않음**), `CarbonAccountingService`로 `CarbonSaving` upsert. baseline=과거 동요일 평균×coverageDays. cu/co는 ItemMaster(판매단가 없으면 `optimization.default-cu/co`).
+  - `OrderRecommendation`에 `actualQuantity`(BigDecimal, nullable)·`actualUpdatedAt`(Instant/LocalDateTime, nullable) 필드 추가. optimize는 신규행 생성 시에만 둘을 NULL로 두고, 기존행 갱신 시에는 두 필드를 건드리지 않는다.
   - `DemandForecast.features` / `OrderRecommendation.rationale`는 `String` 필드 + `@JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)` 매핑(JSON 컬럼).
   - upsert는 각 `findByStoreIdAndItemIdAndTargetDate` 후 갱신/신규.
 
@@ -1117,10 +1119,43 @@ class OrderOptimizationServiceTest {
   - ΔQ: `baseline − Q*`, baseline = 과거 동요일 평균 판매 × coverageDays.
 - [ ] **Step 5: 실행 → PASS.**
 - [ ] **Step 6: 컨트롤러 추가** — `RecommendationController`/`CarbonController`. **응답은 `ApiResponse.ok(...)`로 감싼다.**
-  - `GET /api/v1/recommendations?storeId=&date=`: 저장된 `OrderRecommendation` + **`OrderPolicy`(coverage) + `DemandForecast`(horizonForecast) 조인**으로 items 조립(backend_api_spec §3.3 형태).
+  - `GET /api/v1/recommendations?storeId=&date=`: 저장된 `OrderRecommendation` + **`OrderPolicy`(coverage) + `DemandForecast`(horizonForecast) 조인**으로 items 조립(backend_api_spec §3.3 형태). 응답에 `recommendedQuantity`와 `actualQuantity`(미입력 시 `null`) 모두 포함.
   - `GET /api/v1/carbon/today?storeId=`: 당일 `CarbonSaving` 합산 + byItem + `carEquivalentKm = potentialSavingKg / carbon.car-kgco2-per-km`.
   - `@WebMvcTest` 슬라이스 테스트는 **envelope 검증**(`$.success=true`, `$.data.items[0].itemId` 등).
 - [ ] **Step 7: Commit** — `git commit -m "feat: feature builder, demand forecast, order optimization + carbon APIs (M2)"`
+
+### Task 2.6: 실제 발주량 입력 API (`PUT /api/v1/recommendations/actual`)
+
+**Files:**
+- Create: `order/dto/{ActualOrderRequest,ActualOrderResult}.java`, `order/service/ActualOrderService.java`
+- Modify: `order/domain/OrderRecommendation.java`(actualQuantity/actualUpdatedAt setter), `order/repository/OrderRecommendationRepository.java`, `order/controller/RecommendationController.java`(PUT 핸들러)
+- Test: `src/test/java/com/netzero/order/ActualOrderServiceTest.java`
+
+**Interfaces:**
+- Consumes: `OrderRecommendationRepository`, `ItemMasterRepository`, `StoreRepository`.
+- Produces:
+  - `record ActualOrderRequest(Long storeId, LocalDate targetDate, List<Item> items)`, `record Item(Long itemId, BigDecimal actualQuantity)`.
+  - `record ActualOrderResult(Long storeId, LocalDate targetDate, int updated, List<Long> notFound, List<Line> items)`, `record Line(Long itemId, String itemName, BigDecimal recommendedQuantity, BigDecimal actualQuantity)`.
+  - Repo 추가: `Optional<OrderRecommendation> findByStoreIdAndItemIdAndTargetDate(Long, Long, LocalDate)`(Task 2.5에서 이미 사용 중이면 재사용).
+  - `ActualOrderService.apply(ActualOrderRequest req): ActualOrderResult` — 매장 없으면 `ApiException(STORE_NOT_FOUND)`. 각 item에 대해 추천행 조회 → 있으면 `actualQuantity` 설정 + `actualUpdatedAt=now(KST)` → `updated++`; 없으면 `notFound`에 itemId 추가. `actualQuantity<0`이면 `ApiException(VALIDATION_ERROR)`. `recommendedQuantity`는 보존(읽기만). 부분 성공이어도 `success:true`.
+  - `PUT /api/v1/recommendations/actual` → `ApiResponse<ActualOrderResult>` (backend_api_spec §3.5). 쓰기 → M5 보안에서 `X-API-Key` 적용 대상(Task 5.2 writePaths에 포함).
+
+- [ ] **Step 1: 실패 테스트 작성**
+
+```java
+// test/.../order/ActualOrderServiceTest.java  (Task 2.5 시드/추천 적재 헬퍼 재사용)
+// given: optimize로 우유 OrderRecommendation(recommendedQuantity=66, actualQuantity=null) 저장
+// apply({storeId:1, targetDate, items:[{itemId:milk, actualQuantity:60}]})
+//   → updated=1, items[0].actualQuantity=60, recommendedQuantity=66 유지, actualUpdatedAt!=null
+// 추천 없는 itemId → notFound에 포함, updated 미증가
+// actualQuantity=-1 → ApiException(VALIDATION_ERROR)
+// optimize 재실행 후에도 actualQuantity=60 보존(upsert가 덮어쓰지 않음)
+```
+
+- [ ] **Step 2: 실행 → FAIL** — Run: `./gradlew test --tests com.netzero.order.ActualOrderServiceTest`.
+- [ ] **Step 3: OrderRecommendation 필드/세터 + ActualOrderService + 컨트롤러 PUT 핸들러 구현.**
+- [ ] **Step 4: 실행 → PASS.**
+- [ ] **Step 5: Commit** — `git add src/main/java/com/netzero/order src/test/java/com/netzero/order && git commit -m "feat: user actual order quantity input API PUT /recommendations/actual (M2)"`
 
 ---
 
@@ -1346,7 +1381,7 @@ public class KmaWeatherProvider implements WeatherProvider {
 **Interfaces:**
 - Produces: API Key(`X-API-Key`) 필터(쓰기 엔드포인트), CORS(프론트 오리진), `@EnableScheduling`, springdoc `/swagger-ui.html`. 스모크: ingest→pipeline(mock)→recommendations→carbon→export 전 과정 1테스트.
 
-- [ ] **Step 1: SecurityConfig 강화**(신규 생성 아님 — M0 Task 0.1의 permitAll 빈을 수정) — Demo: 조회는 허용, `/ingest/**`·`/pipeline/**`·`/export/archive` 는 `ApiKeyFilter`로 `X-API-Key`(config `security.api-key`) 검증. 키 불일치 시 envelope `{success:false,error:{code:"VALIDATION_ERROR",...}}` 401. 테스트는 `security.api-key`를 주입해 통과시킨다.
+- [ ] **Step 1: SecurityConfig 강화**(신규 생성 아님 — M0 Task 0.1의 permitAll 빈을 수정) — Demo: 조회는 허용, `/ingest/**`·`/pipeline/**`·`/export/archive`·`PUT /recommendations/actual` 는 `ApiKeyFilter`로 `X-API-Key`(config `security.api-key`) 검증. 키 불일치 시 envelope `{success:false,error:{code:"VALIDATION_ERROR",...}}` 401. 테스트는 `security.api-key`를 주입해 통과시킨다.
 - [ ] **Step 2: DemoSmokeTest 작성** (`@SpringBootTest` + MockMvc, MockForecastClient) — sales/inventory CSV ingest → `pipeline/run` → `GET /recommendations` 비어있지 않음 → `GET /carbon/today` potentialSavingKg>0 → `GET /export/store-inventory.csv` 200.
 - [ ] **Step 3: 실행 → PASS** (`./gradlew test`).
 - [ ] **Step 4: WebConfig(CORS)/OpenApiConfig/SchedulingConfig 추가.**

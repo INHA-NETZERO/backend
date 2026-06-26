@@ -270,7 +270,9 @@ WeatherForecast (region·date 단위)
 | id | Long PK | |
 | store_id, item_id | FK→ItemMaster | |
 | targetDate | date | |
-| recommendedQuantity | numeric(12,3) | 신문팔이 최적 발주량 후 재고차감 실발주 |
+| recommendedQuantity | numeric(12,3) | **시스템 추천** 발주량(신문팔이 최적 발주량 후 재고차감). 파이프라인이 산출·저장 |
+| actualQuantity | numeric(12,3) NULL | **사용자 실제 발주량**(추천을 그대로/수정해 확정). 입력 전엔 NULL — 추천과 분리 기록 |
+| actualUpdatedAt | timestamp NULL | 사용자가 실제 발주량을 마지막으로 입력/수정한 시각(KST) |
 | optimalStockQuantity | numeric(12,3) | Q* (재고차감 전 목표재고) |
 | baselineQuantity | numeric(12,3) | 비교 기준(관행 발주) |
 | criticalRatio | numeric(6,4) | Cu/(Cu+Co) |
