@@ -6,7 +6,7 @@
 set -euo pipefail
 
 SERVICE_KEY="${1:-${KMA_SERVICE_KEY:-}}"
-TARGET_DATE="${2:-$(date +%Y%m%d)}"
+TARGET_DATE="${2:-$(date -d "-1 year" +%Y%m%d 2>/dev/null || python3 -c "from datetime import date; from dateutil.relativedelta import relativedelta; print((date.today()-relativedelta(years=1)).strftime('%Y%m%d'))")}"
 BASE_URL="https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0"
 
 # 서울 기준 nx=60, ny=127 (V3 시드와 동일)
