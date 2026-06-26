@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-DOMAIN="ec2-34-229-22-15.compute-1.amazonaws.com"
+DOMAIN="34-229-22-15.sslip.io"
 EMAIL="${CERTBOT_EMAIL:-admin@example.com}"
 
 echo "=== [1/4] 더미 인증서 생성 (nginx 최초 기동용) ==="
