@@ -583,6 +583,38 @@ class GlobalExceptionHandlerTest {
 
 > 이후 모든 컨트롤러는 `ApiResponse<T>`를 반환한다(성공 `ApiResponse.ok(payload)`). 이전 태스크의 예시 응답 JSON은 `data` payload 기준이므로 컨트롤러에서 `ok()`로 감싼다.
 
+### Task 1.3b: 품목마스터 조회 API (`GET /api/v1/items` + `/items/{id}`)
+
+**Files:**
+- Create: `store/dto/ItemMasterResponse.java`, `store/service/ItemQueryService.java`, `store/controller/ItemController.java`
+- Test: `src/test/java/com/netzero/store/ItemControllerTest.java`
+
+**Interfaces:**
+- Consumes: `ItemMasterRepository`(Task 1.2), `ApiResponse`(Task 1.3).
+- Produces:
+  - `record ItemMasterResponse(Long itemId, String name, ItemCategory category, boolean wasteTarget, String unit, Integer shelfLifeDays, StorageCondition storageCondition, BigDecimal kgPerUnit, BigDecimal efProd, BigDecimal efWaste, BigDecimal purchasePrice, String priceUnit, String note)` — `static from(ItemMaster)` 매퍼.
+  - `ItemQueryService.findAll(String category, Boolean wasteTargetOnly): List<ItemMasterResponse>` — `category` 필터(생략 시 전체), `wasteTargetOnly=true`면 `wasteTarget`만. 정렬 `category`→`name` 오름차순.
+  - `ItemQueryService.findOne(Long id): ItemMasterResponse` — 없으면 `ApiException(ITEM_NOT_FOUND)`.
+  - `GET /api/v1/items?category=&wasteTargetOnly=` → `ApiResponse<{count, items[]}>` (backend_api_spec §8.1). `GET /api/v1/items/{id}` → `ApiResponse<ItemMasterResponse>` (§8.2).
+
+- [ ] **Step 1: 실패 테스트 작성** (`@SpringBootTest` + MockMvc 또는 `@WebMvcTest`+mock service)
+
+```java
+// test/.../store/ItemControllerTest.java — 시드(V2) 6품목 기준
+// GET /api/v1/items → success=true, data.count=6, items[0]에 efProd/unit 노출
+// GET /api/v1/items?category=원재료 → 원재료 품목만
+// GET /api/v1/items?wasteTargetOnly=true → 폐기대상만(아메리카노/컵 제외)
+// GET /api/v1/items/{없는id} → 400, error.code=ITEM_NOT_FOUND
+```
+
+- [ ] **Step 2: 실행하여 실패 확인** — Run: `./gradlew test --tests com.netzero.store.ItemControllerTest` → Expected: FAIL.
+
+- [ ] **Step 3: DTO + ItemQueryService + ItemController 구현** (정렬·필터는 서비스에서; 컨트롤러는 `ApiResponse.ok`로 감쌈)
+
+- [ ] **Step 4: 실행** — Run: `./gradlew test --tests com.netzero.store.ItemControllerTest` → Expected: PASS.
+
+- [ ] **Step 5: Commit** — `git add src/main/java/com/netzero/store src/test/java/com/netzero/store && git commit -m "feat: item master query API GET /items, /items/{id} (M1)"`
+
 ### Task 1.4: 판매 CSV 수집 (`POST /api/v1/ingest/sales` + `/ingest/sales/daily`)
 
 **Files:**
