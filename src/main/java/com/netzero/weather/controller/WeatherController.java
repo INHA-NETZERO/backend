@@ -1,10 +1,13 @@
 package com.netzero.weather.controller;
 
 import com.netzero.common.ApiResponse;
+import com.netzero.common.error.ErrorCode;
 import com.netzero.weather.dto.WeatherSnapshot;
 import com.netzero.weather.service.WeatherService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -28,10 +31,17 @@ public class WeatherController {
      * 해당 매장·날짜의 기상청 예보를 즉시 조회·저장한다.
      */
     @PostMapping("/api/v1/weather/refresh")
-    public ApiResponse<WeatherSnapshot> refresh(
+    public ResponseEntity<ApiResponse<WeatherSnapshot>> refresh(
             @RequestParam Long storeId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        WeatherSnapshot snapshot = weatherService.fetchAndStore(storeId, date);
-        return ApiResponse.ok(snapshot);
+        try {
+            WeatherSnapshot snapshot = weatherService.fetchAndStore(storeId, date);
+            return ResponseEntity.ok(ApiResponse.ok(snapshot));
+        } catch (Exception e) {
+            @SuppressWarnings("unchecked")
+            ApiResponse<WeatherSnapshot> errorResponse = (ApiResponse<WeatherSnapshot>) (ApiResponse<?>)
+                    ApiResponse.error(ErrorCode.WEATHER_FETCH_FAILED, e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(errorResponse);
+        }
     }
 }
