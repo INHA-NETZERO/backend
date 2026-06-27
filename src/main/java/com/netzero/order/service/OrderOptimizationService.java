@@ -272,7 +272,7 @@ public class OrderOptimizationService {
     @Transactional(readOnly = true)
     public CarbonSummaryResponse getCarbonSummary(Long storeId) {
         List<CarbonSaving> all = carbonSavingRepository.findByStoreIdAndTargetDateBetween(
-                storeId, LocalDate.of(2000, 1, 1), LocalDate.now());
+                storeId, LocalDate.of(2000, 1, 1), LocalDate.now().minusYears(1));
 
         BigDecimal totalGuaranteed = all.stream()
                 .map(CarbonSaving::getGuaranteedSavingKg)

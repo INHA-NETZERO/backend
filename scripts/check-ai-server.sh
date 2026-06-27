@@ -42,16 +42,22 @@ info "1. /v1/forecast (수요예측) 점검"
 
 FORECAST_PAYLOAD='{
   "storeId": 1,
-  "targetDate": "2026-06-27",
-  "salesPresignedUrls": [],
-  "coverage": {"startDate": "2026-01-01", "endDate": "2026-06-26"},
-  "weather": [],
+  "targetDate": "2026-06-28",
+  "salesHistory": {
+    "presignedUrls": ["https://zerowave.s3.amazonaws.com/sales-2025-05.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=test"],
+    "format": "sales_csv_v1"
+  },
+  "weather": {
+    "forecastDate": "2026-06-28",
+    "avgTemp": 21.2,
+    "precipitationMm": 12.0,
+    "precipitationProb": 80,
+    "skyCode": 4
+  },
   "rows": [
     {
-      "itemCode": "R01",
-      "itemName": "우유",
-      "category": "원재료",
-      "features": {"dayOfWeek": 5, "isHoliday": false, "trend": 0.05}
+      "itemId": 101,
+      "features": {"dayOfWeek": 6, "isHoliday": false, "ma7": 9.4, "trend": -0.3}
     }
   ]
 }'
@@ -66,20 +72,20 @@ FORECAST_RESP=$(curl -s -X POST "$AI_URL/v1/forecast" \
 FORECAST_HTTP=$(echo "$FORECAST_RESP" | grep "__HTTP_CODE__" | sed 's/__HTTP_CODE__//')
 FORECAST_BODY=$(echo "$FORECAST_RESP" | grep -v "__HTTP_CODE__")
 
+echo "  응답 (HTTP $FORECAST_HTTP):"
+echo "$FORECAST_BODY" | python3 -m json.tool 2>/dev/null || echo "$FORECAST_BODY"
+echo ""
 if [ "$FORECAST_HTTP" = "200" ]; then
     ok "/v1/forecast → HTTP 200"
-    # modelVersion 필드 확인
     if echo "$FORECAST_BODY" | grep -q "modelVersion\|predictions"; then
         ok "응답 구조 확인 (modelVersion / predictions 포함)"
     else
         fail "응답에 modelVersion 또는 predictions 필드 없음"
-        echo "  응답: $FORECAST_BODY"
     fi
 elif [ "$FORECAST_HTTP" = "000" ]; then
     fail "/v1/forecast 타임아웃 또는 연결 실패"
 else
     fail "/v1/forecast → HTTP $FORECAST_HTTP"
-    echo "  응답: $FORECAST_BODY"
 fi
 
 # ── 2. /v1/order-recommendation 엔드포인트 ────────────────────────────────────
@@ -96,19 +102,20 @@ ORDER_RESP=$(curl -s -X POST "$AI_URL/v1/order-recommendation" \
 ORDER_HTTP=$(echo "$ORDER_RESP" | grep "__HTTP_CODE__" | sed 's/__HTTP_CODE__//')
 ORDER_BODY=$(echo "$ORDER_RESP" | grep -v "__HTTP_CODE__")
 
+echo "  응답 (HTTP $ORDER_HTTP):"
+echo "$ORDER_BODY" | python3 -m json.tool 2>/dev/null || echo "$ORDER_BODY"
+echo ""
 if [ "$ORDER_HTTP" = "200" ]; then
     ok "/v1/order-recommendation → HTTP 200"
     if echo "$ORDER_BODY" | grep -q "modelVersion\|predictions"; then
         ok "응답 구조 확인 (modelVersion / predictions 포함)"
     else
         fail "응답에 modelVersion 또는 predictions 필드 없음"
-        echo "  응답: $ORDER_BODY"
     fi
 elif [ "$ORDER_HTTP" = "000" ]; then
     fail "/v1/order-recommendation 타임아웃 또는 연결 실패"
 else
     fail "/v1/order-recommendation → HTTP $ORDER_HTTP"
-    echo "  응답: $ORDER_BODY"
 fi
 
 # ── 3. /v1/generate (LLM 챗) 점검 ────────────────────────────────────────────
@@ -138,21 +145,20 @@ GENERATE_RESP=$(curl -s -X POST "$AI_URL/v1/generate" \
 GENERATE_HTTP=$(echo "$GENERATE_RESP" | grep "__HTTP_CODE__" | sed 's/__HTTP_CODE__//')
 GENERATE_BODY=$(echo "$GENERATE_RESP" | grep -v "__HTTP_CODE__")
 
+echo "  응답 (HTTP $GENERATE_HTTP):"
+echo "$GENERATE_BODY" | python3 -m json.tool 2>/dev/null || echo "$GENERATE_BODY"
+echo ""
 if [ "$GENERATE_HTTP" = "200" ]; then
     ok "/v1/generate → HTTP 200"
     if echo "$GENERATE_BODY" | grep -q "answer"; then
         ok "응답 구조 확인 (answer 포함)"
-        ANSWER=$(echo "$GENERATE_BODY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('answer','')[:80])" 2>/dev/null || echo "(파싱 실패)")
-        info "answer 미리보기: $ANSWER..."
     else
         fail "응답에 answer 필드 없음"
-        echo "  응답: $GENERATE_BODY"
     fi
 elif [ "$GENERATE_HTTP" = "000" ]; then
     fail "/v1/generate 타임아웃 또는 연결 실패"
 else
     fail "/v1/generate → HTTP $GENERATE_HTTP"
-    echo "  응답: $GENERATE_BODY"
 fi
 
 # ── 결과 요약 ─────────────────────────────────────────────────────────────────
