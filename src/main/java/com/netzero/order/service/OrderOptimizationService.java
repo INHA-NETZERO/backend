@@ -178,7 +178,8 @@ public class OrderOptimizationService {
 
     @Transactional(readOnly = true)
     public RecommendationResponse loadRecommendations(Long storeId, LocalDate date) {
-        List<OrderRecommendation> recs = orderRecommendationRepository.findByStoreIdAndTargetDate(storeId, date);
+        LocalDate seedDate = date.minusYears(1);
+        List<OrderRecommendation> recs = orderRecommendationRepository.findByStoreIdAndTargetDate(storeId, seedDate);
         List<RecommendationItem> items = recs.stream().map(rec -> {
             ItemMaster item = itemMasterRepository.findById(rec.getItemId()).orElse(null);
             Optional<OrderPolicy> policy = orderPolicyRepository.findByStoreIdAndItemId(storeId, rec.getItemId());
@@ -196,19 +197,20 @@ public class OrderOptimizationService {
 
     @Transactional(readOnly = true)
     public CarbonTodayResponse getCarbonToday(Long storeId) {
+        LocalDate today = LocalDate.now().minusYears(1);
         // Find the most recent targetDate
         List<CarbonSaving> recent = carbonSavingRepository
-                .findByStoreIdAndTargetDateBetween(storeId, LocalDate.now().minusDays(90), LocalDate.now());
+                .findByStoreIdAndTargetDateBetween(storeId, today.minusDays(90), today);
 
         if (recent.isEmpty()) {
-            return new CarbonTodayResponse(LocalDate.now(),
+            return new CarbonTodayResponse(today,
                     BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, List.of());
         }
 
         LocalDate latestDate = recent.stream()
                 .map(CarbonSaving::getTargetDate)
                 .max(LocalDate::compareTo)
-                .orElse(LocalDate.now());
+                .orElse(today);
 
         List<CarbonSaving> todaySavings = recent.stream()
                 .filter(cs -> cs.getTargetDate().equals(latestDate))
@@ -252,7 +254,8 @@ public class OrderOptimizationService {
 
     @Transactional(readOnly = true)
     public CarbonSavingsResponse getCarbonSavings(Long storeId, LocalDate from, LocalDate to) {
-        List<CarbonSaving> savings = carbonSavingRepository.findByStoreIdAndTargetDateBetween(storeId, from, to);
+        List<CarbonSaving> savings = carbonSavingRepository.findByStoreIdAndTargetDateBetween(
+                storeId, from.minusYears(1), to.minusYears(1));
 
         // Group by date, sum per date
         Map<LocalDate, BigDecimal[]> byDate = new TreeMap<>();
