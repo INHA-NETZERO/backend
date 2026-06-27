@@ -14,9 +14,10 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-ok()   { echo -e "${GREEN}[PASS]${NC} $1"; PASS=$((PASS + 1)); }
-fail() { echo -e "${RED}[FAIL]${NC} $1"; FAIL=$((FAIL + 1)); }
-info() { echo -e "${YELLOW}[INFO]${NC} $1"; }
+ok()      { echo -e "${GREEN}[PASS]${NC} $1"; PASS=$((PASS + 1)); }
+fail()    { echo -e "${RED}[FAIL]${NC} $1"; FAIL=$((FAIL + 1)); }
+info()    { echo -e "${YELLOW}[INFO]${NC} $1"; }
+json_pp() { python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin), ensure_ascii=False, indent=4))" 2>/dev/null || cat; }
 
 echo "========================================"
 echo "  AI 서버 연동 점검"
@@ -73,7 +74,7 @@ FORECAST_HTTP=$(echo "$FORECAST_RESP" | grep "__HTTP_CODE__" | sed 's/__HTTP_COD
 FORECAST_BODY=$(echo "$FORECAST_RESP" | grep -v "__HTTP_CODE__")
 
 echo "  응답 (HTTP $FORECAST_HTTP):"
-echo "$FORECAST_BODY" | python3 -m json.tool 2>/dev/null || echo "$FORECAST_BODY"
+echo "$FORECAST_BODY" | json_pp
 echo ""
 if [ "$FORECAST_HTTP" = "200" ]; then
     ok "/v1/forecast → HTTP 200"
@@ -92,9 +93,40 @@ fi
 echo ""
 info "2. /v1/order-recommendation (발주 추천) 점검"
 
+ORDER_PAYLOAD='{
+  "storeId": 1,
+  "targetDate": "2026-06-27",
+  "salesHistory": {
+    "presignedUrls": ["https://zerowave.s3.ap-northeast-2.amazonaws.com/sales/store1/sales-2026-05.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=test"],
+    "format": "sales_csv_v1"
+  },
+  "coverage": {
+    "leadTimeDays": 1,
+    "orderCycleDays": 7,
+    "coverageDays": 8
+  },
+  "weather": [
+    {
+      "forecastDate": "2026-06-28",
+      "avgTemp": 21.2,
+      "precipitationMm": 12.0,
+      "precipitationProb": 80,
+      "skyCode": 4
+    }
+  ],
+  "rows": [
+    {
+      "itemId": 101,
+      "orderCycleDays": 7,
+      "leadTimeDays": 1,
+      "features": {"dayOfWeek": 6, "isHoliday": false, "ma7": 9.4, "trend": -0.3}
+    }
+  ]
+}'
+
 ORDER_RESP=$(curl -s -X POST "$AI_URL/v1/order-recommendation" \
     -H "Content-Type: application/json" \
-    -d "$FORECAST_PAYLOAD" \
+    -d "$ORDER_PAYLOAD" \
     --connect-timeout 10 \
     --max-time 30 \
     -w "\n__HTTP_CODE__%{http_code}" 2>/dev/null || echo -e "\n__HTTP_CODE__000")
@@ -103,14 +135,19 @@ ORDER_HTTP=$(echo "$ORDER_RESP" | grep "__HTTP_CODE__" | sed 's/__HTTP_CODE__//'
 ORDER_BODY=$(echo "$ORDER_RESP" | grep -v "__HTTP_CODE__")
 
 echo "  응답 (HTTP $ORDER_HTTP):"
-echo "$ORDER_BODY" | python3 -m json.tool 2>/dev/null || echo "$ORDER_BODY"
+echo "$ORDER_BODY" | json_pp
 echo ""
 if [ "$ORDER_HTTP" = "200" ]; then
     ok "/v1/order-recommendation → HTTP 200"
-    if echo "$ORDER_BODY" | grep -q "modelVersion\|predictions"; then
-        ok "응답 구조 확인 (modelVersion / predictions 포함)"
+    if echo "$ORDER_BODY" | grep -q "modelVersion"; then
+        ok "응답 구조 확인 (modelVersion 포함)"
     else
-        fail "응답에 modelVersion 또는 predictions 필드 없음"
+        fail "응답에 modelVersion 필드 없음"
+    fi
+    if echo "$ORDER_BODY" | grep -q "daily"; then
+        ok "응답 구조 확인 (predictions[].daily 포함)"
+    else
+        fail "응답에 predictions[].daily 필드 없음"
     fi
 elif [ "$ORDER_HTTP" = "000" ]; then
     fail "/v1/order-recommendation 타임아웃 또는 연결 실패"
@@ -146,7 +183,7 @@ GENERATE_HTTP=$(echo "$GENERATE_RESP" | grep "__HTTP_CODE__" | sed 's/__HTTP_COD
 GENERATE_BODY=$(echo "$GENERATE_RESP" | grep -v "__HTTP_CODE__")
 
 echo "  응답 (HTTP $GENERATE_HTTP):"
-echo "$GENERATE_BODY" | python3 -m json.tool 2>/dev/null || echo "$GENERATE_BODY"
+echo "$GENERATE_BODY" | json_pp
 echo ""
 if [ "$GENERATE_HTTP" = "200" ]; then
     ok "/v1/generate → HTTP 200"
