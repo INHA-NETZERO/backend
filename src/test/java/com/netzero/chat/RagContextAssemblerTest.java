@@ -88,8 +88,9 @@ class RagContextAssemblerTest {
     @Test
     void assemble_itemContainsNameKey() {
         Grounding grounding = assembler.assemble(STORE_ID, TEST_DATE, itemId);
-        assertThat(grounding.item()).containsKey("name");
-        assertThat(grounding.item().get("name")).isEqualTo("우유");
+        assertThat(grounding.item()).containsKey("itemName");
+        assertThat(grounding.item().get("itemName")).isEqualTo("우유");
+        assertThat(grounding.item()).containsKey("itemId");
     }
 
     @Test

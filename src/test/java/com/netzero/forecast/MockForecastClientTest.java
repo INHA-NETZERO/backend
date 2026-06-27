@@ -26,7 +26,7 @@ class MockForecastClientTest {
         ForecastRequest request = new ForecastRequest(
             1L,
             targetDate,
-            List.of(),
+            new SalesHistory(List.of(), "sales_csv_v1"),
             coverage,
             List.of(),
             rows

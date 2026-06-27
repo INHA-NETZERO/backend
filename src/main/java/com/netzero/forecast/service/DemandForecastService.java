@@ -71,7 +71,8 @@ public class DemandForecastService {
 
         // Step 2: Build ForecastRequest
         CoverageSpec coverage = new CoverageSpec(maxLeadTime, maxCycle, maxCoverage);
-        ForecastRequest req = new ForecastRequest(storeId, targetDate, presignedUrls, coverage, weather, rows);
+        SalesHistory salesHistory = new SalesHistory(presignedUrls, "sales_csv_v1");
+        ForecastRequest req = new ForecastRequest(storeId, targetDate, salesHistory, coverage, weather, rows);
 
         // Step 3: Call ForecastPort
         ForecastResponse response = forecastPort.orderRecommendation(req);

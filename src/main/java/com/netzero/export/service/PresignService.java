@@ -25,6 +25,9 @@ public class PresignService {
     @Value("${storage.s3.presign-expiry-seconds:600}")
     private long presignExpirySeconds;
 
+    @Value("${storage.s3.sales-demo-key:data/sales_demo.csv}")
+    private String salesDemoKey;
+
     @Autowired(required = false)
     private S3Presigner presigner;
 
@@ -48,10 +51,15 @@ public class PresignService {
     }
 
     /**
-     * Returns presigned URLs for the most recent {@code months} sales CSVs for the given store.
-     * Month order: oldest first (e.g., for ref=2026-06-01 and months=2: [2026-05, 2026-06]).
+     * Returns presigned URLs for sales CSVs.
+     * When {@code storage.s3.sales-demo-key} is set (default: data/sales_demo.csv),
+     * returns a single URL for that demo file.
+     * Otherwise, returns monthly file URLs oldest-first for the past {@code months} months.
      */
     public List<String> recentSalesUrls(Long storeId, LocalDate ref, int months) {
+        if (salesDemoKey != null && !salesDemoKey.isBlank()) {
+            return List.of(presignGet(salesDemoKey));
+        }
         List<String> urls = new ArrayList<>(months);
         for (int i = months - 1; i >= 0; i--) {
             LocalDate month = ref.minusMonths(i).withDayOfMonth(1);

@@ -28,6 +28,7 @@ storage:
     region: ${AWS_REGION:ap-northeast-2}
     endpoint: ${S3_ENDPOINT:}
     presign-expiry-seconds: 600
+    sales-demo-key: ${S3_SALES_DEMO_KEY:data/sales_demo.csv}
 security:
   api-key: ${SECURITY_API_KEY:}
 optimization: { default-cu: 1.0, default-co: 1.0 }

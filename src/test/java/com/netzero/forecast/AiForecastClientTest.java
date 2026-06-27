@@ -101,14 +101,15 @@ class AiForecastClientTest {
                 .expect(requestTo("http://localhost:8000/v1/order-recommendation"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.salesPresignedUrls").exists())
+                .andExpect(jsonPath("$.salesHistory.presignedUrls[0]").exists())
+                .andExpect(jsonPath("$.salesHistory.format").value("sales_csv_v1"))
                 .andExpect(jsonPath("$.weather[0].avgTemp").exists())
                 .andRespond(withSuccess(RESPONSE_FIXTURE, MediaType.APPLICATION_JSON));
 
         ForecastRequest req = new ForecastRequest(
                 1L,
                 LocalDate.of(2026, 6, 26),
-                List.of("https://s3.example.com/sales-2026.csv"),
+                new SalesHistory(List.of("https://s3.example.com/sales-2026.csv"), "sales_csv_v1"),
                 new CoverageSpec(7, 1, 8),
                 List.of(new WeatherSnapshot(
                         LocalDate.of(2026, 6, 27),

@@ -163,12 +163,23 @@ GENERATE_PAYLOAD='{
   "question": "오늘 우유 발주 수량이 왜 이렇게 많나요?",
   "locale": "ko",
   "grounding": {
-    "storeId": 1,
-    "date": "2026-06-27",
-    "itemName": "우유",
-    "recommendedQty": 50,
-    "currentStock": 10,
-    "forecastDemand": 45
+    "item": { "itemId": 101, "itemName": "우유", "unit": "L" },
+    "coverage": { "leadTimeDays": 1, "orderCycleDays": 7, "coverageDays": 8 },
+    "forecast": { "p10": 60, "p50": 80, "p90": 108 },
+    "recommendation": {
+      "recommendedQuantity": 66,
+      "optimalStockQuantity": 76.1,
+      "onHand": 12,
+      "baselineQuantity": 88,
+      "criticalRatio": 0.421
+    },
+    "carbon": {
+      "wasteAvoidedKg": 12.31,
+      "guaranteedSavingKg": 2.46,
+      "potentialSavingKg": 39.4,
+      "carEquivalentKm": 8.6
+    },
+    "context": { "date": "2026-06-27", "storeId": 1 }
   }
 }'
 

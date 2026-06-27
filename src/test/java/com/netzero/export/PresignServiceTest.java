@@ -42,16 +42,15 @@ class PresignServiceTest {
     }
 
     @Test
-    void recentSalesUrls_returnsCorrectCount() {
+    void recentSalesUrls_returnsOneUrlInDemoMode() {
+        // Demo mode: sales-demo-key defaults to data/sales_demo.csv → always 1 URL
         List<String> urls = presignService.recentSalesUrls(1L, LocalDate.parse("2026-06-01"), 2);
-        assertThat(urls).hasSize(2);
+        assertThat(urls).hasSize(1);
     }
 
     @Test
-    void recentSalesUrls_keysSpanCorrectMonths() {
-        // ref = 2026-06-01, months = 2 → expect keys for 2026-05 and 2026-06
+    void recentSalesUrls_demoUrlContainsDemoKey() {
         List<String> urls = presignService.recentSalesUrls(1L, LocalDate.parse("2026-06-01"), 2);
-        assertThat(urls.get(0)).contains("store1").contains("sales-2026-05.csv");
-        assertThat(urls.get(1)).contains("store1").contains("sales-2026-06.csv");
+        assertThat(urls.get(0)).contains("sales_demo.csv");
     }
 }
